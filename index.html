@@ -512,6 +512,29 @@ async function setRoom(code, obj){
   }catch(e){ console.error('firebase set failed', e); lastFirebaseError = 'NETWORK: ' + e.message; return false; }
 }
 
+// PATCH hanya mengganti key yang disebutkan di 'body' pada path tertentu,
+// tanpa menimpa key/child lain di path itu. Ini mencegah race condition
+// ketika host & guest menulis field berbeda (mis. hostPhotos vs guestPhotos)
+// hampir bersamaan — PUT penuh bisa saling menimpa perubahan satu sama lain.
+async function patchRoom(subPath, obj){
+  try{
+    var url = FIREBASE_BASE + '/rooms/' + subPath + '.json';
+    var res = await fetch(url, {
+      method:'PATCH',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify(obj)
+    });
+    if(!res.ok){
+      var bodyText = '';
+      try{ bodyText = await res.text(); }catch(e){}
+      lastFirebaseError = 'HTTP ' + res.status + ' ' + res.statusText + (bodyText ? ' — ' + bodyText : '');
+      return false;
+    }
+    lastFirebaseError = '';
+    return true;
+  }catch(e){ console.error('firebase patch failed', e); lastFirebaseError = 'NETWORK: ' + e.message; return false; }
+}
+
 async function startCamera(){
   try{
     if(state.stream) return state.stream;
@@ -720,13 +743,22 @@ async function uploadShotWithFallback(video, code, myPhotoField, shotIndexAtCapt
     if(!shot) return false;
     var fresh = await getRoom(code);
     if(!fresh || fresh.round !== roundAtCapture) return false;
-    var arr = (fresh[myPhotoField] || []).slice();
-    arr[shotIndexAtCapture] = shot;
-    fresh[myPhotoField] = arr;
-    var ok = await setRoom(code, fresh);
+    // PATCH cuma index foto milik kita di dalam field myPhotoField (mis. hostPhotos),
+    // bukan overwrite seluruh room — jadi foto pihak lain (guestPhotos) yang
+    // mungkin baru saja ditulis di waktu hampir bersamaan tidak ikut ke-timpa.
+    var ok = await patchRoom(code + '/' + myPhotoField, makeIndexPatch(shotIndexAtCapture, shot));
     if(ok) return true;
   }
   return false;
+}
+
+// Firebase PATCH butuh object dengan key string index, mis. {"2": "data:..."}.
+// Firebase otomatis mengenali object dengan key integer berurutan sebagai array
+// saat dibaca kembali, jadi struktur hostPhotos/guestPhotos tetap array seperti biasa.
+function makeIndexPatch(index, value){
+  var patch = {};
+  patch[String(index)] = value;
+  return patch;
 }
 
 function doFlash(){
@@ -781,9 +813,13 @@ async function handleCaptureTick(room){
         setTimeout(async function(){
           var fresh = await getRoom(state.code);
           if(fresh && fresh.round === room.round && (fresh.shotIndex||0) === shotIndex){
-            fresh.shotIndex = shotIndex + 1;
-            fresh.countdownStart = (shotIndex + 1 < totalShots) ? (Date.now() + 2600) : null;
-            await setRoom(state.code, fresh);
+            // PATCH cuma shotIndex & countdownStart di root room, bukan seluruh
+            // objek — supaya hostPhotos/guestPhotos yang mungkin baru saja
+            // ditulis pihak lain tidak ikut ke-timpa balik ke versi lama.
+            await patchRoom(state.code, {
+              shotIndex: shotIndex + 1,
+              countdownStart: (shotIndex + 1 < totalShots) ? (Date.now() + 2600) : null
+            });
           }
           state.advancing = false;
         }, 1300);
@@ -816,8 +852,7 @@ async function handleCaptureTick(room){
           if(shotIndex === 0){ btn.style.display = 'block'; }
           var freshReset = await getRoom(state.code);
           if(freshReset && freshReset.round === room.round && (freshReset.shotIndex||0) === shotIndex){
-            freshReset.countdownStart = null;
-            await setRoom(state.code, freshReset);
+            await patchRoom(state.code, { countdownStart: null });
           }
         }
       }
