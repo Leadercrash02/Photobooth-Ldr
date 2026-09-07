@@ -1,0 +1,1241 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<title>Photobooth Jarak Jauh</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=Caveat:wght@600;700&family=Playfair+Display:ital,wght@0,600;1,500;1,600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root{
+  --navy:#161a30;
+  --navy-deep:#0b0e20;
+  --navy-card:#1f2542;
+  --amber:#f2a65a;
+  --amber-soft:#f7c78c;
+  --pink:#e8b4bc;
+  --cream:#faf6ef;
+  --ink:#eae7de;
+  --ink-dim:#9a9cb5;
+  --line: rgba(255,255,255,0.10);
+}
+
+*{box-sizing:border-box; margin:0; padding:0;}
+
+body{
+  font-family:'Inter', sans-serif;
+  background:
+    radial-gradient(ellipse 900px 500px at 50% -10%, #262c52 0%, transparent 60%),
+    linear-gradient(180deg, var(--navy) 0%, var(--navy-deep) 100%);
+  color:var(--ink);
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:28px 16px;
+}
+
+.stage{
+  width:100%;
+  max-width:460px;
+}
+
+.screen{ display:none; animation: fadeUp .5s ease; }
+.screen.active{ display:block; }
+
+@keyframes fadeUp{
+  from{ opacity:0; transform:translateY(10px);}
+  to{ opacity:1; transform:translateY(0);}
+}
+
+.eyebrow{
+  font-family:'JetBrains Mono', monospace;
+  font-size:12px;
+  letter-spacing:0.04em;
+  color:var(--amber-soft);
+  margin-bottom:8px;
+}
+
+h1{
+  font-family:'Space Grotesk', sans-serif;
+  font-weight:700;
+  font-size:30px;
+  line-height:1.15;
+  margin-bottom:10px;
+}
+
+h2{
+  font-family:'Space Grotesk', sans-serif;
+  font-weight:600;
+  font-size:21px;
+  margin-bottom:6px;
+}
+
+p.lead{ color:var(--ink-dim); font-size:15px; line-height:1.55; margin-bottom:22px; }
+
+.card{
+  background:var(--navy-card);
+  border:1px solid var(--line);
+  border-radius:18px;
+  padding:24px;
+}
+
+.field-label{ font-size:13px; color:var(--ink-dim); margin-bottom:6px; display:block; }
+
+input[type=text]{
+  width:100%;
+  background:rgba(255,255,255,0.05);
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:13px 14px;
+  color:var(--ink);
+  font-size:16px;
+  font-family:'Inter', sans-serif;
+  outline:none;
+  transition:border-color .15s;
+}
+input[type=text]:focus{ border-color:var(--amber); }
+input[type=text].code-input{
+  font-family:'JetBrains Mono', monospace;
+  letter-spacing:0.02em;
+  text-align:center;
+  font-size:16px;
+}
+
+textarea{
+  width:100%;
+  background:rgba(255,255,255,0.05);
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:13px 14px;
+  color:var(--ink);
+  font-size:15px;
+  font-family:'Inter', sans-serif;
+  outline:none;
+  resize:none;
+  transition:border-color .15s;
+}
+textarea:focus{ border-color:var(--amber); }
+
+.btn{
+  width:100%;
+  border:none;
+  border-radius:12px;
+  padding:15px 18px;
+  font-family:'Space Grotesk', sans-serif;
+  font-weight:600;
+  font-size:15px;
+  cursor:pointer;
+  transition: transform .12s, opacity .15s;
+}
+.btn:active{ transform:scale(0.98); }
+.btn-primary{ background:var(--amber); color:#2b1a06; }
+.btn-primary:hover{ opacity:0.92; }
+.btn-ghost{
+  background:transparent;
+  color:var(--ink);
+  border:1px solid var(--line);
+}
+.btn-ghost:hover{ border-color:var(--amber-soft); }
+.btn:disabled{ opacity:0.4; cursor:not-allowed; }
+
+.divider-or{
+  display:flex; align-items:center; gap:12px;
+  margin:22px 0;
+  color:var(--ink-dim); font-size:13px;
+}
+.divider-or::before, .divider-or::after{
+  content:''; flex:1; height:1px; background:var(--line);
+}
+
+.error-text{ color:#f0997b; font-size:13px; margin-top:8px; min-height:16px; }
+
+.room-code-display{
+  font-family:'JetBrains Mono', monospace;
+  font-size:18px;
+  letter-spacing:0.02em;
+  word-break:break-all;
+  text-align:center;
+  color:var(--amber);
+  background:rgba(242,166,90,0.08);
+  border:1px dashed rgba(242,166,90,0.4);
+  border-radius:12px;
+  padding:18px 14px;
+  margin:18px 0 12px;
+}
+
+.status-row{
+  display:flex; align-items:center; gap:10px;
+  font-size:14px; color:var(--ink-dim);
+  padding:10px 0;
+}
+.dot{ width:9px; height:9px; border-radius:50%; background:#5f5e5a; flex-shrink:0; }
+.dot.on{ background:#63c47a; box-shadow:0 0 8px rgba(99,196,122,0.6); }
+.dot.pulse{ animation: pulse 1.4s infinite; background:var(--amber); }
+@keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:0.35;} }
+
+.spinner{
+  width:16px; height:16px;
+  border:2px solid rgba(255,255,255,0.15);
+  border-top-color:var(--amber);
+  border-radius:50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink:0;
+}
+@keyframes spin{ to{ transform:rotate(360deg); } }
+
+.template-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:12px;
+  margin:18px 0;
+}
+.tpl-option{
+  border:2px solid var(--line);
+  border-radius:14px;
+  padding:14px 10px;
+  text-align:center;
+  cursor:pointer;
+  transition: border-color .15s, transform .12s;
+  background:rgba(255,255,255,0.03);
+}
+.tpl-option:hover{ transform:translateY(-2px); }
+.tpl-option.selected{ border-color:var(--amber); background:rgba(242,166,90,0.08); }
+.tpl-swatch{
+  width:100%; height:64px; border-radius:8px; margin-bottom:10px;
+}
+.tpl-swatch.classic{ background:linear-gradient(135deg,#faf6ef,#e9e2d0); }
+.tpl-swatch.amber{ background:linear-gradient(135deg,#161a30,#3a2a12,#f2a65a); }
+.tpl-swatch.pink{ background:linear-gradient(135deg,#f6dde1,#e8b4bc); }
+.tpl-swatch.film{ background:repeating-linear-gradient(90deg,#111 0 8px,#222 8px 16px); }
+.tpl-name{ font-size:13px; font-weight:500; }
+
+.video-wrap{
+  position:relative;
+  width:100%;
+  aspect-ratio:1/1;
+  background:#000;
+  border-radius:16px;
+  overflow:hidden;
+  border:1px solid var(--line);
+  margin-bottom:16px;
+}
+video{
+  width:100%; height:100%; object-fit:cover;
+  transform:scaleX(-1) translateZ(0);
+  -webkit-transform:scaleX(-1) translateZ(0);
+  backface-visibility:hidden;
+  -webkit-backface-visibility:hidden;
+  will-change:transform;
+  display:block;
+}
+.flash-overlay{
+  position:absolute; inset:0;
+  background:#fff;
+  opacity:0;
+  pointer-events:none;
+}
+.flash-overlay.flashing{ animation: flash .55s ease-out; }
+@keyframes flash{ 0%{opacity:0.95;} 100%{opacity:0;} }
+
+.countdown-number{
+  position:absolute; inset:0;
+  display:flex; align-items:center; justify-content:center;
+  font-family:'Space Grotesk', sans-serif;
+  font-weight:700;
+  font-size:88px;
+  color:#fff;
+  text-shadow:0 4px 24px rgba(0,0,0,0.6);
+  pointer-events:none;
+}
+
+.captured-badge{
+  position:absolute; top:10px; right:10px;
+  background:rgba(99,196,122,0.9);
+  color:#0b2c14;
+  font-size:12px; font-weight:600;
+  padding:5px 10px; border-radius:20px;
+  font-family:'Inter', sans-serif;
+}
+
+.mini-note{ font-size:13px; color:var(--ink-dim); text-align:center; margin-top:4px; }
+
+.shot-dots{
+  display:flex; justify-content:center; gap:10px;
+  margin:4px 0 16px;
+}
+.shot-dot{
+  width:11px; height:11px; border-radius:50%;
+  background:rgba(255,255,255,0.12);
+  border:1px solid var(--line);
+  transition: background .2s, transform .2s;
+}
+.shot-dot.done{ background:var(--amber); border-color:var(--amber); }
+.shot-dot.current{ transform:scale(1.25); border-color:var(--amber-soft); }
+
+.result-canvas-wrap{
+  width:100%;
+  border-radius:16px;
+  overflow:hidden;
+  border:1px solid var(--line);
+  margin-bottom:18px;
+  background:#000;
+}
+#finalCanvas{ width:100%; display:block; }
+
+.btn-row{ display:flex; gap:10px; margin-top:10px; }
+.btn-row .btn{ flex:1; }
+
+.top-nav{
+  display:flex; justify-content:space-between; align-items:center;
+  margin-bottom:18px;
+}
+.code-chip{
+  font-family:'JetBrains Mono', monospace;
+  font-size:11px;
+  color:var(--amber-soft);
+  background:rgba(242,166,90,0.08);
+  border:1px solid rgba(242,166,90,0.25);
+  padding:5px 10px; border-radius:20px;
+  max-width:180px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.link-btn{
+  background:none; border:none; color:var(--ink-dim);
+  font-size:13px; text-decoration:underline; cursor:pointer;
+  font-family:'Inter', sans-serif;
+}
+
+.footnote{ font-size:12px; color:var(--ink-dim); text-align:center; margin-top:18px; line-height:1.5; }
+</style>
+</head>
+<body>
+
+<div class="stage">
+
+  <div class="screen active" id="screen-start">
+    <div class="eyebrow">PHOTOBOOTH · JARAK JAUH</div>
+    <h1>Foto bareng, walau lagi jauh.</h1>
+    <p class="lead">Bikin room, kirim kodenya ke dia, terus jepret foto di waktu yang sama dari device masing-masing.</p>
+
+    <div class="card">
+      <div class="field-label">Nama kamu</div>
+      <input type="text" id="hostNameInput" value="Ray" maxlength="16" style="margin-bottom:14px;">
+      <div class="field-label">Nama pasangan</div>
+      <input type="text" id="guestNameInput" value="Risma" maxlength="16" style="margin-bottom:18px;">
+      <button class="btn btn-primary" id="btnCreateRoom">Buat room baru</button>
+    </div>
+
+    <div class="divider-or">atau</div>
+
+    <div class="card">
+      <div class="field-label">Punya kode room dari pasangan?</div>
+      <input type="text" id="joinCodeInput" class="code-input" placeholder="tempel kode room di sini" style="margin-bottom:12px;">
+      <button class="btn btn-ghost" id="btnJoinRoom">Gabung room</button>
+      <div class="error-text" id="joinError"></div>
+    </div>
+  </div>
+
+  <div class="screen" id="screen-waiting">
+    <div class="eyebrow">NUNGGU PASANGAN</div>
+    <h2 id="waitingTitle">Room udah jadi!</h2>
+    <p class="lead">Kirim kode ini ke dia biar bisa gabung.</p>
+    <div class="card">
+      <div class="room-code-display" id="roomCodeDisplay">—</div>
+      <button class="btn btn-ghost" id="btnCopyCode" style="margin-bottom:18px;">Salin kode</button>
+      <div class="status-row"><div class="dot on"></div><span id="hostStatusText">Kamu sudah di room</span></div>
+      <div class="status-row"><div class="dot pulse" id="guestDot"></div><span id="guestStatusText">Nunggu pasangan gabung...</span></div>
+    </div>
+  </div>
+
+  <div class="screen" id="screen-template">
+    <div class="top-nav">
+      <div class="code-chip" id="tplCodeChip">ROOM ####</div>
+      <button class="link-btn" id="btnLeaveFromTpl">Keluar room</button>
+    </div>
+    <h2>Pilih tampilan foto strip</h2>
+    <p class="lead">Berdua bakal lihat pilihan ini juga. Siapa yang milih duluan, itu yang dipakai.</p>
+    <div class="template-grid">
+      <div class="tpl-option" data-tpl="classic">
+        <div class="tpl-swatch classic"></div>
+        <div class="tpl-name">Klasik Polaroid</div>
+      </div>
+      <div class="tpl-option" data-tpl="amber">
+        <div class="tpl-swatch amber"></div>
+        <div class="tpl-name">Malam Amber</div>
+      </div>
+      <div class="tpl-option" data-tpl="pink">
+        <div class="tpl-swatch pink"></div>
+        <div class="tpl-name">Dusty Pink</div>
+      </div>
+      <div class="tpl-option" data-tpl="film">
+        <div class="tpl-swatch film"></div>
+        <div class="tpl-name">Film Grain</div>
+      </div>
+    </div>
+    <div class="field-label">Pesan singkat buat foto (opsional)</div>
+    <textarea id="messageInput" rows="2" maxlength="60" placeholder="misal: walau jauh, tetap bersama"></textarea>
+    <div class="mini-note" style="margin-top:14px;">Template kesimpen otomatis begitu kamu pilih.</div>
+  </div>
+
+  <div class="screen" id="screen-capture">
+    <div class="top-nav">
+      <div class="code-chip" id="capCodeChip">ROOM ####</div>
+      <button class="link-btn" id="btnLeaveFromCap">Keluar room</button>
+    </div>
+    <h2 id="captureTitle">Bersiap...</h2>
+    <p class="lead" id="captureSub">Pastikan wajah kelihatan jelas di kamera.</p>
+
+    <div class="video-wrap">
+      <video id="video" autoplay playsinline muted></video>
+      <div class="flash-overlay" id="flashOverlay"></div>
+      <div class="countdown-number" id="countdownNumber" style="display:none;"></div>
+      <div class="captured-badge" id="capturedBadge" style="display:none;">Foto kamu udah masuk</div>
+    </div>
+
+    <div class="shot-dots" id="shotDots"></div>
+
+    <button class="btn btn-primary" id="btnStartCountdown">Ambil foto bareng (4x otomatis)</button>
+    <div class="mini-note" id="otherStatusNote">Nunggu pasangan siap di layar mereka...</div>
+  </div>
+
+  <div class="screen" id="screen-result">
+    <div class="top-nav">
+      <div class="code-chip" id="resCodeChip">ROOM ####</div>
+      <button class="link-btn" id="btnLeaveFromRes">Keluar room</button>
+    </div>
+    <h2>Ini dia hasilnya</h2>
+    <p class="lead">Kalau kurang pas, ambil ulang aja — gratis, gak ada batasnya.</p>
+    <div class="result-canvas-wrap">
+      <canvas id="finalCanvas"></canvas>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-ghost" id="btnRetake">Ambil ulang</button>
+      <button class="btn btn-primary" id="btnDownload">Download foto</button>
+    </div>
+    <button class="btn btn-ghost" id="btnChangeTpl" style="margin-top:10px;">Ganti template</button>
+  </div>
+
+  <p class="footnote">Sinkronisasi room ini lewat Firebase Realtime Database (punya Google, project kamu sendiri). Foto kalian tersimpan di situ selama room aktif. Jangan bagi kode room ke orang lain ya.</p>
+</div>
+
+<script>
+(function(){
+
+var state = {
+  role:null,
+  code:null,
+  poller:null,
+  lastRound:-1,
+  lastCapturedShotIndex:null,
+  advancing:false,
+  countdownTimer:null,
+  stream:null,
+  lastCountdownShown:null,
+};
+
+var els = {
+  screens: {
+    start: document.getElementById('screen-start'),
+    waiting: document.getElementById('screen-waiting'),
+    template: document.getElementById('screen-template'),
+    capture: document.getElementById('screen-capture'),
+    result: document.getElementById('screen-result'),
+  }
+};
+
+function showScreen(name){
+  Object.keys(els.screens).forEach(function(k){
+    els.screens[k].classList.toggle('active', k===name);
+  });
+}
+
+var FIREBASE_BASE = 'https://photobooth-online-cd068-default-rtdb.asia-southeast1.firebasedatabase.app';
+
+async function fbCreateRoom(obj){
+  var res;
+  try{
+    res = await fetch(FIREBASE_BASE + '/rooms.json', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify(obj)
+    });
+  }catch(networkErr){
+    // fetch itself threw: this IS a real connection/DNS/CORS failure
+    throw new Error('NETWORK: ' + networkErr.message);
+  }
+  if(!res.ok){
+    var bodyText = '';
+    try{ bodyText = await res.text(); }catch(e){}
+    // Server responded but rejected the request (e.g. Firebase Rules denying write)
+    throw new Error('HTTP ' + res.status + ' ' + res.statusText + (bodyText ? ' — ' + bodyText : ''));
+  }
+  var data = await res.json();
+  if(!data || !data.name) throw new Error('Firebase tidak mengembalikan room id (cek Rules/response: ' + JSON.stringify(data) + ')');
+  return data.name;
+}
+
+var lastFirebaseError = '';
+
+async function getRoom(code){
+  try{
+    var res = await fetch(FIREBASE_BASE + '/rooms/' + code + '.json', { method:'GET', cache:'no-store' });
+    if(!res.ok){
+      var bodyText = '';
+      try{ bodyText = await res.text(); }catch(e){}
+      lastFirebaseError = 'HTTP ' + res.status + ' ' + res.statusText + (bodyText ? ' — ' + bodyText : '');
+      return null;
+    }
+    var data = await res.json();
+    lastFirebaseError = '';
+    return data || null;
+  }catch(e){ lastFirebaseError = 'NETWORK: ' + e.message; return null; }
+}
+
+async function setRoom(code, obj){
+  try{
+    var res = await fetch(FIREBASE_BASE + '/rooms/' + code + '.json', {
+      method:'PUT',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify(obj)
+    });
+    if(!res.ok){
+      var bodyText = '';
+      try{ bodyText = await res.text(); }catch(e){}
+      lastFirebaseError = 'HTTP ' + res.status + ' ' + res.statusText + (bodyText ? ' — ' + bodyText : '');
+      return false;
+    }
+    lastFirebaseError = '';
+    return true;
+  }catch(e){ console.error('firebase set failed', e); lastFirebaseError = 'NETWORK: ' + e.message; return false; }
+}
+
+async function startCamera(){
+  try{
+    if(state.stream) return state.stream;
+    var stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'user' }, audio:false });
+    state.stream = stream;
+    var video = document.getElementById('video');
+    video.srcObject = stream;
+    video.muted = true;
+    video.setAttribute('playsinline', '');
+    try{
+      await video.play();
+    }catch(playErr){
+      console.error('video.play() failed', playErr);
+      document.getElementById('captureSub').textContent = 'Kamera nyala tapi video gak bisa diputar (' + playErr.name + ').';
+    }
+    return stream;
+  }catch(e){
+    console.error('getUserMedia failed', e);
+    document.getElementById('captureSub').textContent = 'Gak bisa akses kamera (' + e.name + '). Cek izin kamera di browser kamu.';
+    return null;
+  }
+}
+
+document.getElementById('btnCreateRoom').addEventListener('click', async function(){
+  var hostName = document.getElementById('hostNameInput').value.trim() || 'Kamu';
+  var guestName = document.getElementById('guestNameInput').value.trim() || 'Dia';
+  var btn = document.getElementById('btnCreateRoom');
+  var origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Membuat room...';
+  var code;
+  try{
+    code = await fbCreateRoom({
+      createdAt: Date.now(),
+      hostJoined: true,
+      guestJoined: false,
+      template: null,
+      message: '',
+      names: { host: hostName, guest: guestName },
+      round: 0,
+      totalShots: 4,
+      shotIndex: 0,
+      countdownStart: null,
+      hostPhotos: [],
+      guestPhotos: [],
+    });
+  }catch(e){
+    btn.disabled = false;
+    btn.textContent = origText;
+    console.error('fbCreateRoom error:', e);
+    var msg = e && e.message ? e.message : String(e);
+    if(msg.indexOf('NETWORK:') === 0){
+      alert('Gagal bikin room. Kayaknya beneran soal koneksi internet kamu — coba cek WiFi/data terus ulangi.');
+    } else {
+      alert('Gagal bikin room. Ini bukan soal koneksi internet, tapi respons dari server database:\n\n' + msg + '\n\n(Buka console browser buat detail lebih lanjut. Kalau ini "Permission denied", berarti Firebase Database Rules kamu belum ngizinin write.)');
+    }
+    return;
+  }
+  btn.disabled = false;
+  btn.textContent = origText;
+  state.role = 'host';
+  state.code = code;
+  document.getElementById('roomCodeDisplay').textContent = code;
+  document.getElementById('waitingTitle').textContent = 'Room udah jadi!';
+  document.getElementById('hostStatusText').textContent = hostName + ' (kamu) sudah di room';
+  document.getElementById('guestStatusText').textContent = 'Nunggu ' + guestName + ' gabung...';
+  showScreen('waiting');
+  startPolling();
+});
+
+document.getElementById('btnJoinRoom').addEventListener('click', async function(){
+  var code = document.getElementById('joinCodeInput').value.trim();
+  var errEl = document.getElementById('joinError');
+  errEl.textContent = '';
+  if(code.length < 6){ errEl.textContent = 'Masukin kode room dulu.'; return; }
+  var btn = document.getElementById('btnJoinRoom');
+  var origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Menyambungkan...';
+  var room = await getRoom(code);
+  btn.disabled = false;
+  btn.textContent = origText;
+  if(!room){ errEl.textContent = 'Room gak ketemu, cek lagi kodenya.' + (lastFirebaseError ? ' [' + lastFirebaseError + ']' : ''); return; }
+  room.guestJoined = true;
+  var ok = await setRoom(code, room);
+  if(!ok){ errEl.textContent = 'Gagal gabung, coba lagi.' + (lastFirebaseError ? ' [' + lastFirebaseError + ']' : ''); return; }
+  state.role = 'guest';
+  state.code = code;
+  startPolling();
+});
+
+document.getElementById('btnCopyCode').addEventListener('click', function(){
+  var code = document.getElementById('roomCodeDisplay').textContent;
+  if(navigator.clipboard){
+    navigator.clipboard.writeText(code).then(function(){
+      var btn = document.getElementById('btnCopyCode');
+      var orig = btn.textContent;
+      btn.textContent = 'Tersalin!';
+      setTimeout(function(){ btn.textContent = orig; }, 1500);
+    });
+  }
+});
+
+function leaveRoom(){
+  clearInterval(state.poller);
+  if(state.countdownTimer) clearInterval(state.countdownTimer);
+  if(state.stream){ state.stream.getTracks().forEach(function(t){ t.stop(); }); state.stream = null; }
+  state.role = null; state.code = null; state.lastRound = -1; state.lastCapturedShotIndex = null; state.advancing = false;
+  document.getElementById('joinCodeInput').value = '';
+  document.getElementById('joinError').textContent = '';
+  showScreen('start');
+}
+['btnLeaveFromTpl','btnLeaveFromCap','btnLeaveFromRes'].forEach(function(id){
+  document.getElementById(id).addEventListener('click', leaveRoom);
+});
+
+document.querySelectorAll('.tpl-option').forEach(function(el){
+  el.addEventListener('click', async function(){
+    document.querySelectorAll('.tpl-option').forEach(function(o){ o.classList.remove('selected'); });
+    el.classList.add('selected');
+    var tpl = el.getAttribute('data-tpl');
+    var room = await getRoom(state.code);
+    if(!room) return;
+    room.template = tpl;
+    room.message = document.getElementById('messageInput').value.trim();
+    await setRoom(state.code, room);
+  });
+});
+
+document.getElementById('messageInput').addEventListener('change', async function(){
+  var room = await getRoom(state.code);
+  if(!room) return;
+  room.message = document.getElementById('messageInput').value.trim();
+  await setRoom(state.code, room);
+});
+
+document.getElementById('btnStartCountdown').addEventListener('click', async function(){
+  var room = await getRoom(state.code);
+  if(!room || room.countdownStart) return;
+  if((room.shotIndex||0) !== 0) return;
+  room.countdownStart = Date.now() + 3200;
+  await setRoom(state.code, room);
+});
+
+document.getElementById('btnRetake').addEventListener('click', async function(){
+  var room = await getRoom(state.code);
+  if(!room) return;
+  room.hostPhotos = [];
+  room.guestPhotos = [];
+  room.shotIndex = 0;
+  room.countdownStart = null;
+  room.round = (room.round||0) + 1;
+  await setRoom(state.code, room);
+});
+
+document.getElementById('btnChangeTpl').addEventListener('click', async function(){
+  var room = await getRoom(state.code);
+  if(!room) return;
+  room.template = null;
+  room.hostPhotos = [];
+  room.guestPhotos = [];
+  room.shotIndex = 0;
+  room.countdownStart = null;
+  room.round = (room.round||0) + 1;
+  await setRoom(state.code, room);
+});
+
+document.getElementById('btnDownload').addEventListener('click', function(){
+  var canvas = document.getElementById('finalCanvas');
+  var link = document.createElement('a');
+  link.download = 'photobooth-' + state.code + '.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+});
+
+function captureSquareDataURL(video, size, quality){
+  size = size || 720;
+  quality = quality || 0.75;
+  var c = document.createElement('canvas');
+  c.width = size; c.height = size;
+  var ctx = c.getContext('2d');
+  var vw = video.videoWidth, vh = video.videoHeight;
+  if(!vw || !vh) return null;
+  var s = Math.min(vw, vh);
+  var sx = (vw - s) / 2, sy = (vh - s) / 2;
+  ctx.save();
+  ctx.translate(size, 0);
+  ctx.scale(-1, 1);
+  ctx.drawImage(video, sx, sy, s, s, 0, 0, size, size);
+  ctx.restore();
+  return c.toDataURL('image/jpeg', quality);
+}
+
+var QUALITY_LADDER = [
+  { size: 900, quality: 0.85 },
+  { size: 720, quality: 0.75 },
+  { size: 600, quality: 0.65 },
+  { size: 480, quality: 0.55 },
+  { size: 360, quality: 0.45 },
+];
+
+async function uploadShotWithFallback(video, code, myPhotoField, shotIndexAtCapture, roundAtCapture){
+  for(var i=0;i<QUALITY_LADDER.length;i++){
+    var step = QUALITY_LADDER[i];
+    var shot = captureSquareDataURL(video, step.size, step.quality);
+    if(!shot) return false;
+    var fresh = await getRoom(code);
+    if(!fresh || fresh.round !== roundAtCapture) return false;
+    var arr = (fresh[myPhotoField] || []).slice();
+    arr[shotIndexAtCapture] = shot;
+    fresh[myPhotoField] = arr;
+    var ok = await setRoom(code, fresh);
+    if(ok) return true;
+  }
+  return false;
+}
+
+function doFlash(){
+  var f = document.getElementById('flashOverlay');
+  f.classList.remove('flashing');
+  void f.offsetWidth;
+  f.classList.add('flashing');
+}
+
+function updateShotDots(totalShots, doneCount, currentIndex){
+  var wrap = document.getElementById('shotDots');
+  var html = '';
+  for(var i=0;i<totalShots;i++){
+    var cls = 'shot-dot';
+    if(i < doneCount) cls += ' done';
+    else if(i === currentIndex) cls += ' current';
+    html += '<div class="' + cls + '"></div>';
+  }
+  wrap.innerHTML = html;
+}
+
+async function handleCaptureTick(room){
+  var video = document.getElementById('video');
+  var cdEl = document.getElementById('countdownNumber');
+  var btn = document.getElementById('btnStartCountdown');
+  var badge = document.getElementById('capturedBadge');
+  var otherNote = document.getElementById('otherStatusNote');
+  var names = room.names || { host:'Kamu', guest:'Dia' };
+  var myPhotoField = state.role === 'host' ? 'hostPhotos' : 'guestPhotos';
+  var otherPhotoField = state.role === 'host' ? 'guestPhotos' : 'hostPhotos';
+  var otherName = state.role === 'host' ? names.guest : names.host;
+  var totalShots = room.totalShots || 4;
+  var myPhotos = room[myPhotoField] || [];
+  var otherPhotos = room[otherPhotoField] || [];
+  var shotIndex = room.shotIndex || 0;
+
+  updateShotDots(totalShots, Math.min(myPhotos.length, shotIndex), shotIndex);
+
+  var haveMine = myPhotos.length > shotIndex;
+  var haveOther = otherPhotos.length > shotIndex;
+
+  if(haveMine){
+    badge.style.display = 'block';
+    btn.style.display = 'none';
+    cdEl.style.display = 'none';
+    if(haveOther){
+      otherNote.textContent = (shotIndex + 1 < totalShots)
+        ? 'Foto ke-' + (shotIndex+1) + ' dari ' + totalShots + ' selesai! Bersiap foto berikutnya...'
+        : 'Semua foto udah lengkap, lagi digabung jadi strip...';
+      if(state.role === 'host' && !state.advancing){
+        state.advancing = true;
+        setTimeout(async function(){
+          var fresh = await getRoom(state.code);
+          if(fresh && fresh.round === room.round && (fresh.shotIndex||0) === shotIndex){
+            fresh.shotIndex = shotIndex + 1;
+            fresh.countdownStart = (shotIndex + 1 < totalShots) ? (Date.now() + 2600) : null;
+            await setRoom(state.code, fresh);
+          }
+          state.advancing = false;
+        }, 1300);
+      }
+    } else {
+      otherNote.textContent = 'Nunggu foto dari ' + otherName + '...';
+    }
+    return;
+  } else {
+    badge.style.display = 'none';
+  }
+
+  if(room.countdownStart){
+    var remaining = room.countdownStart - Date.now();
+    btn.style.display = 'none';
+    otherNote.textContent = 'Bersiap ya... (foto ' + (shotIndex+1) + '/' + totalShots + ')';
+    if(remaining > 150){
+      var num = Math.ceil(remaining/1000);
+      cdEl.style.display = 'flex';
+      cdEl.textContent = num;
+    } else {
+      if(state.lastCapturedShotIndex !== shotIndex){
+        state.lastCapturedShotIndex = shotIndex;
+        cdEl.style.display = 'none';
+        doFlash();
+        var uploaded = await uploadShotWithFallback(video, state.code, myPhotoField, shotIndex, room.round);
+        if(!uploaded){
+          state.lastCapturedShotIndex = null;
+          otherNote.textContent = 'Gagal upload foto, coba klik lagi ya.';
+          if(shotIndex === 0){ btn.style.display = 'block'; }
+          var freshReset = await getRoom(state.code);
+          if(freshReset && freshReset.round === room.round && (freshReset.shotIndex||0) === shotIndex){
+            freshReset.countdownStart = null;
+            await setRoom(state.code, freshReset);
+          }
+        }
+      }
+    }
+  } else {
+    cdEl.style.display = 'none';
+    if(shotIndex === 0){
+      btn.style.display = 'block';
+      otherNote.textContent = 'Klik tombol kalau berdua udah siap di depan kamera. 4 foto bakal kejepret otomatis berurutan.';
+    } else {
+      btn.style.display = 'none';
+      otherNote.textContent = 'Bersiap buat foto berikutnya...';
+    }
+  }
+}
+
+function hexToRgb(hex){
+  var m = hex.replace('#','');
+  return [parseInt(m.substring(0,2),16), parseInt(m.substring(2,4),16), parseInt(m.substring(4,6),16)];
+}
+
+function drawRoundedImage(ctx, img, x, y, w, h, radius){
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(x+radius, y);
+  ctx.arcTo(x+w, y, x+w, y+h, radius);
+  ctx.arcTo(x+w, y+h, x, y+h, radius);
+  ctx.arcTo(x, y+h, x, y, radius);
+  ctx.arcTo(x, y, x+w, y, radius);
+  ctx.closePath();
+  ctx.clip();
+  var ir = Math.min(w/img.width, h/img.height);
+  var iw = img.width*ir, ih = img.height*ir;
+  ctx.drawImage(img, x + (w-iw)/2, y + (h-ih)/2, iw, ih);
+  ctx.restore();
+}
+
+function grayscaleImageToCanvas(img){
+  var c = document.createElement('canvas');
+  c.width = img.width; c.height = img.height;
+  var ctx = c.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+  var data = ctx.getImageData(0,0,c.width,c.height);
+  var d = data.data;
+  for(var i=0;i<d.length;i+=4){
+    var avg = d[i]*0.34 + d[i+1]*0.5 + d[i+2]*0.16;
+    d[i]=avg; d[i+1]=avg; d[i+2]=avg;
+  }
+  ctx.putImageData(data,0,0);
+  return c;
+}
+
+function drawHeart(ctx, cx, cy, size, color){
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy + size*0.3);
+  ctx.bezierCurveTo(cx, cy, cx - size*0.5, cy, cx - size*0.5, cy + size*0.3);
+  ctx.bezierCurveTo(cx - size*0.5, cy + size*0.6, cx, cy + size*0.8, cx, cy + size);
+  ctx.bezierCurveTo(cx, cy + size*0.8, cx + size*0.5, cy + size*0.6, cx + size*0.5, cy + size*0.3);
+  ctx.bezierCurveTo(cx + size*0.5, cy, cx, cy, cx, cy + size*0.3);
+  ctx.fill();
+  ctx.restore();
+}
+
+function formatDate(){
+  var d = new Date();
+  var months = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+  return d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
+}
+
+function loadImages(urls){
+  return Promise.all(urls.map(function(src){
+    return new Promise(function(res){
+      if(!src){ res(null); return; }
+      var img = new Image();
+      img.onload = function(){ res(img); };
+      img.onerror = function(){ res(null); };
+      img.src = src;
+    });
+  }));
+}
+
+function drawWashiTape(ctx, cx, cy, w, h, rot, color1, color2){
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(rot);
+  ctx.shadowColor = 'rgba(0,0,0,0.18)';
+  ctx.shadowBlur = 8;
+  ctx.shadowOffsetY = 3;
+  var grad = ctx.createLinearGradient(0,-h/2,0,h/2);
+  grad.addColorStop(0, color1);
+  grad.addColorStop(1, color2);
+  ctx.fillStyle = grad;
+  ctx.globalAlpha = 0.82;
+  ctx.fillRect(-w/2, -h/2, w, h);
+  ctx.globalAlpha = 1;
+  ctx.shadowColor = 'transparent';
+  // subtle diagonal texture lines
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+  ctx.lineWidth = 1.5;
+  for(var i=-w/2; i<w/2; i+=9){
+    ctx.beginPath();
+    ctx.moveTo(i, -h/2);
+    ctx.lineTo(i+h*0.6, h/2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawClothespin(ctx, cx, cy, scale){
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(scale, scale);
+  ctx.shadowColor = 'rgba(0,0,0,0.35)';
+  ctx.shadowBlur = 14;
+  ctx.shadowOffsetY = 8;
+  // wooden body (two halves meeting at a point, pinching downward)
+  var bodyGrad = ctx.createLinearGradient(-26,0,26,0);
+  bodyGrad.addColorStop(0,'#d9a468');
+  bodyGrad.addColorStop(0.5,'#eec089');
+  bodyGrad.addColorStop(1,'#c98d52');
+  ctx.fillStyle = bodyGrad;
+  roundRectPath(ctx, -26, -46, 52, 66, 10);
+  ctx.fill();
+  ctx.shadowColor = 'transparent';
+  // center split line
+  ctx.strokeStyle = 'rgba(120,75,30,0.4)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, -40); ctx.lineTo(0, 6);
+  ctx.stroke();
+  // pinch prongs at bottom
+  ctx.beginPath();
+  ctx.moveTo(-26, 6); ctx.lineTo(-6, 26); ctx.lineTo(-6, 8); ctx.closePath();
+  ctx.fillStyle = '#c98d52'; ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(26, 6); ctx.lineTo(6, 26); ctx.lineTo(6, 8); ctx.closePath();
+  ctx.fill();
+  // metal spring coil in the middle
+  ctx.strokeStyle = '#9aa0a8';
+  ctx.lineWidth = 3.2;
+  ctx.beginPath();
+  ctx.ellipse(0, -10, 11, 8, 0, 0, Math.PI*2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(0, -2, 11, 8, 0, 0, Math.PI*2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+async function renderResult(room){
+  if(document.fonts && document.fonts.ready){
+    try{ await document.fonts.ready; }catch(e){}
+  }
+  var canvas = document.getElementById('finalCanvas');
+  var names = room.names || { host:'Kamu', guest:'Dia' };
+  var message = room.message || '';
+  var dateStr = formatDate();
+  var tpl = room.template || 'classic';
+  var totalShots = room.totalShots || 4;
+
+  var hostImgs = await loadImages((room.hostPhotos || []).slice(0, totalShots));
+  var guestImgs = await loadImages((room.guestPhotos || []).slice(0, totalShots));
+
+  // shared strip layout — every template stacks `totalShots` frames, each holding
+  // one host photo + one guest photo side by side
+  var W = 900;
+  var squareSize = 330, pad = 20, gapPhotos = 14, captionH = 44, gapY = 26;
+  var topMargin = 190, bottomMargin = 210;
+  var frameW = pad*2 + squareSize*2 + gapPhotos;
+  var frameH = pad*2 + squareSize + captionH;
+  var frameX = (W - frameW) / 2;
+  var H = topMargin + frameH*totalShots + gapY*(totalShots-1) + bottomMargin;
+
+  canvas.width = W; canvas.height = H;
+  var ctx = canvas.getContext('2d');
+
+  function drawPairInto(imgL, imgR, x, y, size, gap){
+    if(imgL) drawRoundedImage(ctx, imgL, x, y, size, size, 4);
+    else { ctx.fillStyle = '#ddd'; ctx.fillRect(x, y, size, size); }
+    if(imgR) drawRoundedImage(ctx, imgR, x + size + gap, y, size, size, 4);
+    else { ctx.fillStyle = '#ddd'; ctx.fillRect(x + size + gap, y, size, size); }
+  }
+
+  if(tpl === 'classic'){
+    ctx.fillStyle = '#f2ece0';
+    ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = 'rgba(0,0,0,0.025)';
+    for(var n=0;n<600;n++){
+      ctx.beginPath();
+      ctx.arc(Math.random()*W, Math.random()*H, Math.random()*1.3, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.textAlign = 'center';
+    ctx.font = "600 15px 'JetBrains Mono'";
+    ctx.fillStyle = 'rgba(90,80,60,0.55)';
+    ctx.fillText('PHOTOBOOTH · JARAK JAUH', W/2, 58);
+    ctx.font = "600 40px 'Space Grotesk'";
+    ctx.fillStyle = '#2b2b2b';
+    ctx.fillText(names.host + ' & ' + names.guest, W/2, 108);
+
+    for(var i=0;i<totalShots;i++){
+      var y = topMargin + i*(frameH+gapY);
+      var rot = (i % 2 === 0 ? -1 : 1) * (0.012 + (i*0.003));
+      ctx.save();
+      ctx.translate(frameX + frameW/2, y + frameH/2);
+      ctx.rotate(rot);
+      ctx.translate(-frameW/2, -frameH/2);
+      ctx.shadowColor = 'rgba(0,0,0,0.28)';
+      ctx.shadowBlur = 26;
+      ctx.shadowOffsetY = 14;
+      ctx.fillStyle = '#ffffff';
+      roundRectPath(ctx, 0, 0, frameW, frameH, 6);
+      ctx.fill();
+      ctx.shadowColor = 'transparent';
+      drawPairInto(hostImgs[i], guestImgs[i], pad, pad, squareSize, gapPhotos);
+      ctx.font = "26px 'Caveat'";
+      ctx.fillStyle = '#7a6f5c';
+      ctx.textAlign = 'left';
+      ctx.fillText('#' + (i+1) + ' dari ' + totalShots, pad+2, frameH - 14);
+      ctx.restore();
+    }
+
+    // washi tape holding the top of the strip to an imaginary wall
+    drawWashiTape(ctx, W/2 - 120, topMargin - 6, 96, 40, -0.22, 'rgba(232,196,120,0.85)', 'rgba(219,170,90,0.85)');
+    drawWashiTape(ctx, W/2 + 120, topMargin - 6, 96, 40, 0.22, 'rgba(232,180,190,0.85)', 'rgba(216,150,165,0.85)');
+    drawClothespin(ctx, W/2, topMargin - 40, 1.15);
+
+    ctx.textAlign = 'center';
+    ctx.font = "34px 'Caveat'";
+    ctx.fillStyle = '#4a4235';
+    ctx.fillText(message || 'walau jauh, tetap bersama', W/2, H - 130);
+    ctx.font = "22px 'JetBrains Mono'";
+    ctx.fillStyle = 'rgba(74,66,53,0.65)';
+    ctx.fillText(dateStr, W/2, H - 90);
+  }
+
+  else if(tpl === 'amber'){
+    var grad = ctx.createRadialGradient(W/2,H*0.25,80,W/2,H*0.6,1400);
+    grad.addColorStop(0,'#232a4d');
+    grad.addColorStop(1,'#0b0e20');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0,0,W,H);
+    for(var s=0;s<140;s++){
+      var sx = Math.random()*W, sy = Math.random()*H;
+      var r = Math.random()*2+0.5;
+      ctx.save();
+      ctx.shadowColor = '#f2a65a';
+      ctx.shadowBlur = 6;
+      ctx.fillStyle = 'rgba(247,199,140,0.8)';
+      ctx.beginPath(); ctx.arc(sx,sy,r,0,Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
+    ctx.strokeStyle = 'rgba(242,166,90,0.5)';
+    ctx.lineWidth = 6;
+    ctx.strokeRect(28,28,W-56,H-56);
+    ctx.textAlign = 'center';
+    ctx.font = "600 38px 'Space Grotesk'";
+    ctx.fillStyle = '#f2a65a';
+    ctx.fillText(names.host + ' & ' + names.guest, W/2, 100);
+
+    for(var i2=0;i2<totalShots;i2++){
+      var y2 = topMargin + i2*(frameH+gapY);
+      ctx.strokeStyle = 'rgba(242,166,90,0.55)';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(frameX, y2, frameW, frameH - captionH);
+      drawPairInto(hostImgs[i2], guestImgs[i2], frameX+pad, y2+pad, squareSize, gapPhotos);
+      ctx.font = "18px 'JetBrains Mono'";
+      ctx.fillStyle = 'rgba(247,199,140,0.75)';
+      ctx.textAlign = 'left';
+      ctx.fillText('FRAME 0' + (i2+1), frameX+pad, y2 + frameH - 14);
+    }
+
+    ctx.font = "20px 'JetBrains Mono'";
+    ctx.fillStyle = 'rgba(247,199,140,0.8)';
+    ctx.textAlign = 'center';
+    ctx.fillText('SYNC OK · ' + dateStr, W/2, H - 130);
+    if(message){
+      ctx.fillText(message, W/2, H - 95);
+    }
+  }
+
+  else if(tpl === 'pink'){
+    var pg = ctx.createLinearGradient(0,0,0,H);
+    pg.addColorStop(0,'#f6dde1');
+    pg.addColorStop(1,'#faf1ee');
+    ctx.fillStyle = pg;
+    ctx.fillRect(0,0,W,H);
+    for(var hc=0; hc<28; hc++){
+      drawHeart(ctx, Math.random()*W, Math.random()*H, 16+Math.random()*20, 'rgba(212,83,126,0.16)');
+    }
+    ctx.textAlign = 'center';
+    ctx.font = "italic 600 40px 'Playfair Display'";
+    ctx.fillStyle = '#993556';
+    ctx.fillText(names.host + ' & ' + names.guest, W/2, 100);
+
+    for(var i3=0;i3<totalShots;i3++){
+      var y3 = topMargin + i3*(frameH+gapY);
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.14)';
+      ctx.shadowBlur = 22;
+      ctx.shadowOffsetY = 8;
+      ctx.fillStyle = '#ffffff';
+      roundRectPath(ctx, frameX, y3, frameW, frameH, 22);
+      ctx.fill();
+      ctx.restore();
+      drawPairInto(hostImgs[i3], guestImgs[i3], frameX+pad, y3+pad, squareSize, gapPhotos);
+      drawHeart(ctx, frameX + frameW - 22, y3 + frameH - 22, 14, 'rgba(212,83,126,0.55)');
+    }
+
+    ctx.font = "italic 30px 'Playfair Display'";
+    ctx.fillStyle = '#a8637c';
+    ctx.textAlign = 'center';
+    ctx.fillText(message || 'sampai jumpa lagi', W/2, H - 130);
+    ctx.font = "20px 'Playfair Display'";
+    ctx.fillText(dateStr, W/2, H - 95);
+  }
+
+  else if(tpl === 'film'){
+    ctx.fillStyle = '#0c0c0c';
+    ctx.fillRect(0,0,W,H);
+    var holeR = 11;
+    for(var hy=36; hy<H-30; hy+=64){
+      ctx.fillStyle = '#f4f1ea';
+      ctx.beginPath(); ctx.arc(40, hy, holeR, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(W-40, hy, holeR, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.textAlign = 'center';
+    ctx.font = "30px 'JetBrains Mono'";
+    ctx.fillStyle = '#f4f1ea';
+    ctx.fillText(names.host + ' x ' + names.guest, W/2, 100);
+
+    for(var i4=0;i4<totalShots;i4++){
+      var y4 = topMargin + i4*(frameH+gapY);
+      var gsHost = hostImgs[i4] ? grayscaleImageToCanvas(hostImgs[i4]) : null;
+      var gsGuest = guestImgs[i4] ? grayscaleImageToCanvas(guestImgs[i4]) : null;
+      drawPairInto(gsHost, gsGuest, frameX+pad, y4+pad, squareSize, gapPhotos);
+      ctx.strokeStyle = '#f4f1ea';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(frameX+pad, y4+pad, squareSize, squareSize);
+      ctx.strokeRect(frameX+pad+squareSize+gapPhotos, y4+pad, squareSize, squareSize);
+      ctx.font = "16px 'JetBrains Mono'";
+      ctx.fillStyle = 'rgba(244,241,234,0.7)';
+      ctx.textAlign = 'left';
+      ctx.fillText('FRAME 0' + (i4+1), frameX+pad, y4 + frameH - 14);
+    }
+
+    ctx.font = "18px 'JetBrains Mono'";
+    ctx.fillStyle = 'rgba(244,241,234,0.65)';
+    ctx.textAlign = 'center';
+    ctx.fillText((message ? message + '  ·  ' : '') + dateStr, W/2, H - 100);
+  }
+}
+
+function roundRectPath(ctx, x, y, w, h, r){
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.arcTo(x+w, y, x+w, y+h, r);
+  ctx.arcTo(x+w, y+h, x, y+h, r);
+  ctx.arcTo(x, y+h, x, y, r);
+  ctx.arcTo(x, y, x+w, y, r);
+  ctx.closePath();
+}
+
+async function tick(){
+  if(!state.code) return;
+  var room = await getRoom(state.code);
+  if(!room) return;
+
+  if(room.round !== state.lastRound){
+    state.lastRound = room.round;
+    state.lastCapturedShotIndex = null;
+    state.advancing = false;
+  }
+
+  var names = room.names || { host:'Kamu', guest:'Dia' };
+
+  if(!room.guestJoined){
+    if(state.role === 'host'){
+      showScreen('waiting');
+    }
+    return;
+  }
+
+  document.getElementById('tplCodeChip').textContent = 'ROOM ' + state.code;
+  document.getElementById('capCodeChip').textContent = 'ROOM ' + state.code;
+  document.getElementById('resCodeChip').textContent = 'ROOM ' + state.code;
+
+  if(!room.template){
+    showScreen('template');
+    document.querySelectorAll('.tpl-option').forEach(function(o){ o.classList.remove('selected'); });
+    return;
+  }
+
+  var totalShots = room.totalShots || 4;
+  var hostDone = (room.hostPhotos || []).length >= totalShots;
+  var guestDone = (room.guestPhotos || []).length >= totalShots;
+
+  if(hostDone && guestDone){
+    showScreen('result');
+    await renderResult(room);
+    return;
+  }
+
+  showScreen('capture');
+  document.getElementById('captureTitle').textContent = 'Waktunya foto, ' + (state.role==='host'? names.host : names.guest) + '!';
+  await startCamera();
+  await handleCaptureTick(room);
+}
+
+function startPolling(){
+  if(state.poller) clearInterval(state.poller);
+  tick();
+  state.poller = setInterval(tick, 800);
+}
+
+})();
+</script>
+</body>
+</html>
