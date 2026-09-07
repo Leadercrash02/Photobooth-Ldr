@@ -260,6 +260,19 @@ video{
 
 .mini-note{ font-size:13px; color:var(--ink-dim); text-align:center; margin-top:4px; }
 
+.shot-dots{
+  display:flex; justify-content:center; gap:10px;
+  margin:4px 0 16px;
+}
+.shot-dot{
+  width:11px; height:11px; border-radius:50%;
+  background:rgba(255,255,255,0.12);
+  border:1px solid var(--line);
+  transition: background .2s, transform .2s;
+}
+.shot-dot.done{ background:var(--amber); border-color:var(--amber); }
+.shot-dot.current{ transform:scale(1.25); border-color:var(--amber-soft); }
+
 .result-canvas-wrap{
   width:100%;
   border-radius:16px;
@@ -382,11 +395,9 @@ video{
       <div class="captured-badge" id="capturedBadge" style="display:none;">Foto kamu udah masuk</div>
     </div>
 
-    <div class="mini-note" id="camDebug" style="margin-bottom:10px;">Menyalakan kamera...</div>
-    <button class="btn btn-ghost" id="btnTestSnapshot" style="margin-bottom:14px;">🔍 Tes ambil 1 frame dari kamera</button>
-    <img id="debugSnapshotImg" style="display:none; width:100%; border-radius:12px; margin-bottom:14px; border:1px solid var(--line);">
+    <div class="shot-dots" id="shotDots"></div>
 
-    <button class="btn btn-primary" id="btnStartCountdown">Ambil foto bareng</button>
+    <button class="btn btn-primary" id="btnStartCountdown">Ambil foto bareng (4x otomatis)</button>
     <div class="mini-note" id="otherStatusNote">Nunggu pasangan siap di layar mereka...</div>
   </div>
 
@@ -418,7 +429,8 @@ var state = {
   code:null,
   poller:null,
   lastRound:-1,
-  capturedThisRound:false,
+  lastCapturedShotIndex:null,
+  advancing:false,
   countdownTimer:null,
   stream:null,
   lastCountdownShown:null,
@@ -506,25 +518,14 @@ async function startCamera(){
     var stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'user' }, audio:false });
     state.stream = stream;
     var video = document.getElementById('video');
-    var dbg = document.getElementById('camDebug');
     video.srcObject = stream;
     video.muted = true;
     video.setAttribute('playsinline', '');
-
-    video.addEventListener('loadeddata', function(){
-      if(dbg) dbg.textContent = 'Kamera aktif — resolusi ' + video.videoWidth + 'x' + video.videoHeight + ' (readyState ' + video.readyState + ')';
-    });
-    setTimeout(function(){
-      if(dbg && video.readyState < 2){
-        dbg.textContent = 'Belum ada frame video masuk setelah 4 detik (readyState ' + video.readyState + '). Kemungkinan bug render browser, coba tombol tes di bawah.';
-      }
-    }, 4000);
-
     try{
       await video.play();
     }catch(playErr){
       console.error('video.play() failed', playErr);
-      document.getElementById('captureSub').textContent = 'Kamera nyala tapi video gak bisa diputar (' + playErr.name + '). Coba buka halaman ini langsung di Chrome, bukan lewat viewer file.';
+      document.getElementById('captureSub').textContent = 'Kamera nyala tapi video gak bisa diputar (' + playErr.name + ').';
     }
     return stream;
   }catch(e){
@@ -533,27 +534,6 @@ async function startCamera(){
     return null;
   }
 }
-
-document.getElementById('btnTestSnapshot').addEventListener('click', function(){
-  var video = document.getElementById('video');
-  var img = document.getElementById('debugSnapshotImg');
-  var dbg = document.getElementById('camDebug');
-  if(!video.videoWidth || !video.videoHeight){
-    dbg.textContent = 'Belum ada dimensi video (videoWidth=0). Stream belum siap.';
-    return;
-  }
-  var c = document.createElement('canvas');
-  c.width = video.videoWidth; c.height = video.videoHeight;
-  var ctx = c.getContext('2d');
-  ctx.drawImage(video, 0, 0);
-  var pixelData = ctx.getImageData(0,0,c.width,c.height).data;
-  var sum = 0;
-  for(var i=0;i<pixelData.length;i+=400){ sum += pixelData[i]+pixelData[i+1]+pixelData[i+2]; }
-  var avgBrightness = sum / (pixelData.length/400);
-  img.src = c.toDataURL('image/jpeg', 0.8);
-  img.style.display = 'block';
-  dbg.textContent = 'Frame diambil, rata2 brightness ~' + Math.round(avgBrightness) + ' (0=hitam total, 300+ nya biasanya ada cahaya). Cek gambar di bawah tombol ini beneran keliatan atau item juga.';
-});
 
 document.getElementById('btnCreateRoom').addEventListener('click', async function(){
   var hostName = document.getElementById('hostNameInput').value.trim() || 'Kamu';
@@ -572,9 +552,11 @@ document.getElementById('btnCreateRoom').addEventListener('click', async functio
       message: '',
       names: { host: hostName, guest: guestName },
       round: 0,
+      totalShots: 4,
+      shotIndex: 0,
       countdownStart: null,
-      hostPhoto: null,
-      guestPhoto: null,
+      hostPhotos: [],
+      guestPhotos: [],
     });
   }catch(e){
     btn.disabled = false;
@@ -637,7 +619,7 @@ function leaveRoom(){
   clearInterval(state.poller);
   if(state.countdownTimer) clearInterval(state.countdownTimer);
   if(state.stream){ state.stream.getTracks().forEach(function(t){ t.stop(); }); state.stream = null; }
-  state.role = null; state.code = null; state.lastRound = -1; state.capturedThisRound = false;
+  state.role = null; state.code = null; state.lastRound = -1; state.lastCapturedShotIndex = null; state.advancing = false;
   document.getElementById('joinCodeInput').value = '';
   document.getElementById('joinError').textContent = '';
   showScreen('start');
@@ -669,6 +651,7 @@ document.getElementById('messageInput').addEventListener('change', async functio
 document.getElementById('btnStartCountdown').addEventListener('click', async function(){
   var room = await getRoom(state.code);
   if(!room || room.countdownStart) return;
+  if((room.shotIndex||0) !== 0) return;
   room.countdownStart = Date.now() + 3200;
   await setRoom(state.code, room);
 });
@@ -676,8 +659,9 @@ document.getElementById('btnStartCountdown').addEventListener('click', async fun
 document.getElementById('btnRetake').addEventListener('click', async function(){
   var room = await getRoom(state.code);
   if(!room) return;
-  room.hostPhoto = null;
-  room.guestPhoto = null;
+  room.hostPhotos = [];
+  room.guestPhotos = [];
+  room.shotIndex = 0;
   room.countdownStart = null;
   room.round = (room.round||0) + 1;
   await setRoom(state.code, room);
@@ -687,8 +671,9 @@ document.getElementById('btnChangeTpl').addEventListener('click', async function
   var room = await getRoom(state.code);
   if(!room) return;
   room.template = null;
-  room.hostPhoto = null;
-  room.guestPhoto = null;
+  room.hostPhotos = [];
+  room.guestPhotos = [];
+  room.shotIndex = 0;
   room.countdownStart = null;
   room.round = (room.round||0) + 1;
   await setRoom(state.code, room);
@@ -728,14 +713,16 @@ var QUALITY_LADDER = [
   { size: 360, quality: 0.45 },
 ];
 
-async function uploadPhotoWithFallback(video, code, myPhotoField, roundAtCapture){
+async function uploadShotWithFallback(video, code, myPhotoField, shotIndexAtCapture, roundAtCapture){
   for(var i=0;i<QUALITY_LADDER.length;i++){
     var step = QUALITY_LADDER[i];
     var shot = captureSquareDataURL(video, step.size, step.quality);
     if(!shot) return false;
     var fresh = await getRoom(code);
     if(!fresh || fresh.round !== roundAtCapture) return false;
-    fresh[myPhotoField] = shot;
+    var arr = (fresh[myPhotoField] || []).slice();
+    arr[shotIndexAtCapture] = shot;
+    fresh[myPhotoField] = arr;
     var ok = await setRoom(code, fresh);
     if(ok) return true;
   }
@@ -749,6 +736,18 @@ function doFlash(){
   f.classList.add('flashing');
 }
 
+function updateShotDots(totalShots, doneCount, currentIndex){
+  var wrap = document.getElementById('shotDots');
+  var html = '';
+  for(var i=0;i<totalShots;i++){
+    var cls = 'shot-dot';
+    if(i < doneCount) cls += ' done';
+    else if(i === currentIndex) cls += ' current';
+    html += '<div class="' + cls + '"></div>';
+  }
+  wrap.innerHTML = html;
+}
+
 async function handleCaptureTick(room){
   var video = document.getElementById('video');
   var cdEl = document.getElementById('countdownNumber');
@@ -756,15 +755,42 @@ async function handleCaptureTick(room){
   var badge = document.getElementById('capturedBadge');
   var otherNote = document.getElementById('otherStatusNote');
   var names = room.names || { host:'Kamu', guest:'Dia' };
-  var myPhotoField = state.role === 'host' ? 'hostPhoto' : 'guestPhoto';
-  var otherPhotoField = state.role === 'host' ? 'guestPhoto' : 'hostPhoto';
+  var myPhotoField = state.role === 'host' ? 'hostPhotos' : 'guestPhotos';
+  var otherPhotoField = state.role === 'host' ? 'guestPhotos' : 'hostPhotos';
   var otherName = state.role === 'host' ? names.guest : names.host;
+  var totalShots = room.totalShots || 4;
+  var myPhotos = room[myPhotoField] || [];
+  var otherPhotos = room[otherPhotoField] || [];
+  var shotIndex = room.shotIndex || 0;
 
-  if(room[myPhotoField]){
+  updateShotDots(totalShots, Math.min(myPhotos.length, shotIndex), shotIndex);
+
+  var haveMine = myPhotos.length > shotIndex;
+  var haveOther = otherPhotos.length > shotIndex;
+
+  if(haveMine){
     badge.style.display = 'block';
     btn.style.display = 'none';
     cdEl.style.display = 'none';
-    otherNote.textContent = room[otherPhotoField] ? 'Foto berdua udah lengkap, lagi digabung...' : ('Nunggu foto dari ' + otherName + '...');
+    if(haveOther){
+      otherNote.textContent = (shotIndex + 1 < totalShots)
+        ? 'Foto ke-' + (shotIndex+1) + ' dari ' + totalShots + ' selesai! Bersiap foto berikutnya...'
+        : 'Semua foto udah lengkap, lagi digabung jadi strip...';
+      if(state.role === 'host' && !state.advancing){
+        state.advancing = true;
+        setTimeout(async function(){
+          var fresh = await getRoom(state.code);
+          if(fresh && fresh.round === room.round && (fresh.shotIndex||0) === shotIndex){
+            fresh.shotIndex = shotIndex + 1;
+            fresh.countdownStart = (shotIndex + 1 < totalShots) ? (Date.now() + 2600) : null;
+            await setRoom(state.code, fresh);
+          }
+          state.advancing = false;
+        }, 1300);
+      }
+    } else {
+      otherNote.textContent = 'Nunggu foto dari ' + otherName + '...';
+    }
     return;
   } else {
     badge.style.display = 'none';
@@ -773,23 +799,23 @@ async function handleCaptureTick(room){
   if(room.countdownStart){
     var remaining = room.countdownStart - Date.now();
     btn.style.display = 'none';
-    otherNote.textContent = 'Bersiap ya...';
+    otherNote.textContent = 'Bersiap ya... (foto ' + (shotIndex+1) + '/' + totalShots + ')';
     if(remaining > 150){
       var num = Math.ceil(remaining/1000);
       cdEl.style.display = 'flex';
       cdEl.textContent = num;
     } else {
-      if(!state.capturedThisRound){
-        state.capturedThisRound = true;
+      if(state.lastCapturedShotIndex !== shotIndex){
+        state.lastCapturedShotIndex = shotIndex;
         cdEl.style.display = 'none';
         doFlash();
-        var uploaded = await uploadPhotoWithFallback(video, state.code, myPhotoField, room.round);
+        var uploaded = await uploadShotWithFallback(video, state.code, myPhotoField, shotIndex, room.round);
         if(!uploaded){
-          state.capturedThisRound = false;
+          state.lastCapturedShotIndex = null;
           otherNote.textContent = 'Gagal upload foto, coba klik lagi ya.';
-          btn.style.display = 'block';
+          if(shotIndex === 0){ btn.style.display = 'block'; }
           var freshReset = await getRoom(state.code);
-          if(freshReset && freshReset.round === room.round){
+          if(freshReset && freshReset.round === room.round && (freshReset.shotIndex||0) === shotIndex){
             freshReset.countdownStart = null;
             await setRoom(state.code, freshReset);
           }
@@ -798,8 +824,13 @@ async function handleCaptureTick(room){
     }
   } else {
     cdEl.style.display = 'none';
-    btn.style.display = 'block';
-    otherNote.textContent = 'Klik tombol kalau berdua udah siap di depan kamera.';
+    if(shotIndex === 0){
+      btn.style.display = 'block';
+      otherNote.textContent = 'Klik tombol kalau berdua udah siap di depan kamera. 4 foto bakal kejepret otomatis berurutan.';
+    } else {
+      btn.style.display = 'none';
+      otherNote.textContent = 'Bersiap buat foto berikutnya...';
+    }
   }
 }
 
@@ -858,176 +889,287 @@ function formatDate(){
   return d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
 }
 
+function loadImages(urls){
+  return Promise.all(urls.map(function(src){
+    return new Promise(function(res){
+      if(!src){ res(null); return; }
+      var img = new Image();
+      img.onload = function(){ res(img); };
+      img.onerror = function(){ res(null); };
+      img.src = src;
+    });
+  }));
+}
+
+function drawWashiTape(ctx, cx, cy, w, h, rot, color1, color2){
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(rot);
+  ctx.shadowColor = 'rgba(0,0,0,0.18)';
+  ctx.shadowBlur = 8;
+  ctx.shadowOffsetY = 3;
+  var grad = ctx.createLinearGradient(0,-h/2,0,h/2);
+  grad.addColorStop(0, color1);
+  grad.addColorStop(1, color2);
+  ctx.fillStyle = grad;
+  ctx.globalAlpha = 0.82;
+  ctx.fillRect(-w/2, -h/2, w, h);
+  ctx.globalAlpha = 1;
+  ctx.shadowColor = 'transparent';
+  // subtle diagonal texture lines
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+  ctx.lineWidth = 1.5;
+  for(var i=-w/2; i<w/2; i+=9){
+    ctx.beginPath();
+    ctx.moveTo(i, -h/2);
+    ctx.lineTo(i+h*0.6, h/2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawClothespin(ctx, cx, cy, scale){
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(scale, scale);
+  ctx.shadowColor = 'rgba(0,0,0,0.35)';
+  ctx.shadowBlur = 14;
+  ctx.shadowOffsetY = 8;
+  // wooden body (two halves meeting at a point, pinching downward)
+  var bodyGrad = ctx.createLinearGradient(-26,0,26,0);
+  bodyGrad.addColorStop(0,'#d9a468');
+  bodyGrad.addColorStop(0.5,'#eec089');
+  bodyGrad.addColorStop(1,'#c98d52');
+  ctx.fillStyle = bodyGrad;
+  roundRectPath(ctx, -26, -46, 52, 66, 10);
+  ctx.fill();
+  ctx.shadowColor = 'transparent';
+  // center split line
+  ctx.strokeStyle = 'rgba(120,75,30,0.4)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, -40); ctx.lineTo(0, 6);
+  ctx.stroke();
+  // pinch prongs at bottom
+  ctx.beginPath();
+  ctx.moveTo(-26, 6); ctx.lineTo(-6, 26); ctx.lineTo(-6, 8); ctx.closePath();
+  ctx.fillStyle = '#c98d52'; ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(26, 6); ctx.lineTo(6, 26); ctx.lineTo(6, 8); ctx.closePath();
+  ctx.fill();
+  // metal spring coil in the middle
+  ctx.strokeStyle = '#9aa0a8';
+  ctx.lineWidth = 3.2;
+  ctx.beginPath();
+  ctx.ellipse(0, -10, 11, 8, 0, 0, Math.PI*2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(0, -2, 11, 8, 0, 0, Math.PI*2);
+  ctx.stroke();
+  ctx.restore();
+}
+
 async function renderResult(room){
   if(document.fonts && document.fonts.ready){
     try{ await document.fonts.ready; }catch(e){}
   }
   var canvas = document.getElementById('finalCanvas');
-  var W = 1000, H = 1600;
-  canvas.width = W; canvas.height = H;
-  var ctx = canvas.getContext('2d');
   var names = room.names || { host:'Kamu', guest:'Dia' };
   var message = room.message || '';
   var dateStr = formatDate();
-
-  var hostImg = new Image();
-  var guestImg = new Image();
-  await new Promise(function(res){ hostImg.onload = res; hostImg.src = room.hostPhoto; });
-  await new Promise(function(res){ guestImg.onload = res; guestImg.src = room.guestPhoto; });
-
   var tpl = room.template || 'classic';
+  var totalShots = room.totalShots || 4;
+
+  var hostImgs = await loadImages((room.hostPhotos || []).slice(0, totalShots));
+  var guestImgs = await loadImages((room.guestPhotos || []).slice(0, totalShots));
+
+  // shared strip layout — every template stacks `totalShots` frames, each holding
+  // one host photo + one guest photo side by side
+  var W = 900;
+  var squareSize = 330, pad = 20, gapPhotos = 14, captionH = 44, gapY = 26;
+  var topMargin = 190, bottomMargin = 210;
+  var frameW = pad*2 + squareSize*2 + gapPhotos;
+  var frameH = pad*2 + squareSize + captionH;
+  var frameX = (W - frameW) / 2;
+  var H = topMargin + frameH*totalShots + gapY*(totalShots-1) + bottomMargin;
+
+  canvas.width = W; canvas.height = H;
+  var ctx = canvas.getContext('2d');
+
+  function drawPairInto(imgL, imgR, x, y, size, gap){
+    if(imgL) drawRoundedImage(ctx, imgL, x, y, size, size, 4);
+    else { ctx.fillStyle = '#ddd'; ctx.fillRect(x, y, size, size); }
+    if(imgR) drawRoundedImage(ctx, imgR, x + size + gap, y, size, size, 4);
+    else { ctx.fillStyle = '#ddd'; ctx.fillRect(x + size + gap, y, size, size); }
+  }
 
   if(tpl === 'classic'){
-    ctx.fillStyle = '#faf6ef';
+    ctx.fillStyle = '#f2ece0';
     ctx.fillRect(0,0,W,H);
-    ctx.fillStyle = 'rgba(0,0,0,0.02)';
-    for(var i=0;i<250;i++){
+    ctx.fillStyle = 'rgba(0,0,0,0.025)';
+    for(var n=0;n<600;n++){
       ctx.beginPath();
-      ctx.arc(Math.random()*W, Math.random()*H, Math.random()*1.4, 0, Math.PI*2);
+      ctx.arc(Math.random()*W, Math.random()*H, Math.random()*1.3, 0, Math.PI*2);
       ctx.fill();
     }
-    function polaroid(img, x, y, w, h, rot){
+    ctx.textAlign = 'center';
+    ctx.font = "600 15px 'JetBrains Mono'";
+    ctx.fillStyle = 'rgba(90,80,60,0.55)';
+    ctx.fillText('PHOTOBOOTH · JARAK JAUH', W/2, 58);
+    ctx.font = "600 40px 'Space Grotesk'";
+    ctx.fillStyle = '#2b2b2b';
+    ctx.fillText(names.host + ' & ' + names.guest, W/2, 108);
+
+    for(var i=0;i<totalShots;i++){
+      var y = topMargin + i*(frameH+gapY);
+      var rot = (i % 2 === 0 ? -1 : 1) * (0.012 + (i*0.003));
       ctx.save();
-      ctx.translate(x+w/2, y+h/2);
+      ctx.translate(frameX + frameW/2, y + frameH/2);
       ctx.rotate(rot);
-      ctx.translate(-w/2,-h/2);
-      ctx.shadowColor = 'rgba(0,0,0,0.25)';
-      ctx.shadowBlur = 30;
-      ctx.shadowOffsetY = 12;
+      ctx.translate(-frameW/2, -frameH/2);
+      ctx.shadowColor = 'rgba(0,0,0,0.28)';
+      ctx.shadowBlur = 26;
+      ctx.shadowOffsetY = 14;
       ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0,0,w,h);
+      roundRectPath(ctx, 0, 0, frameW, frameH, 6);
+      ctx.fill();
       ctx.shadowColor = 'transparent';
-      var pad = 22;
-      var photoH = h - pad*2 - 60;
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(pad,pad,w-pad*2,photoH);
-      ctx.clip();
-      var ir = Math.max((w-pad*2)/img.width, photoH/img.height);
-      var iw = img.width*ir, ih = img.height*ir;
-      ctx.drawImage(img, pad + ((w-pad*2)-iw)/2, pad + (photoH-ih)/2, iw, ih);
-      ctx.restore();
+      drawPairInto(hostImgs[i], guestImgs[i], pad, pad, squareSize, gapPhotos);
+      ctx.font = "26px 'Caveat'";
+      ctx.fillStyle = '#7a6f5c';
+      ctx.textAlign = 'left';
+      ctx.fillText('#' + (i+1) + ' dari ' + totalShots, pad+2, frameH - 14);
       ctx.restore();
     }
-    polaroid(hostImg, 90, 110, 820, 630, -0.025);
-    polaroid(guestImg, 90, 800, 820, 630, 0.025);
-    ctx.fillStyle = '#2b2b2b';
-    ctx.font = "56px 'Caveat'";
+
+    // washi tape holding the top of the strip to an imaginary wall
+    drawWashiTape(ctx, W/2 - 120, topMargin - 6, 96, 40, -0.22, 'rgba(232,196,120,0.85)', 'rgba(219,170,90,0.85)');
+    drawWashiTape(ctx, W/2 + 120, topMargin - 6, 96, 40, 0.22, 'rgba(232,180,190,0.85)', 'rgba(216,150,165,0.85)');
+    drawClothespin(ctx, W/2, topMargin - 40, 1.15);
+
     ctx.textAlign = 'center';
-    ctx.fillText(names.host + ' & ' + names.guest, W/2, 1478);
-    ctx.font = "30px 'Caveat'";
-    ctx.fillStyle = '#5a5a5a';
-    ctx.fillText((message ? message + '  ·  ' : '') + dateStr, W/2, 1520);
+    ctx.font = "34px 'Caveat'";
+    ctx.fillStyle = '#4a4235';
+    ctx.fillText(message || 'walau jauh, tetap bersama', W/2, H - 130);
+    ctx.font = "22px 'JetBrains Mono'";
+    ctx.fillStyle = 'rgba(74,66,53,0.65)';
+    ctx.fillText(dateStr, W/2, H - 90);
   }
 
   else if(tpl === 'amber'){
-    var grad = ctx.createRadialGradient(W/2,H*0.3,80,W/2,H*0.5,1100);
+    var grad = ctx.createRadialGradient(W/2,H*0.25,80,W/2,H*0.6,1400);
     grad.addColorStop(0,'#232a4d');
     grad.addColorStop(1,'#0b0e20');
     ctx.fillStyle = grad;
     ctx.fillRect(0,0,W,H);
-    for(var s=0;s<60;s++){
-      var sx = Math.random()*W, sy = Math.random()*H*0.75;
+    for(var s=0;s<140;s++){
+      var sx = Math.random()*W, sy = Math.random()*H;
       var r = Math.random()*2+0.5;
       ctx.save();
       ctx.shadowColor = '#f2a65a';
       ctx.shadowBlur = 6;
-      ctx.fillStyle = 'rgba(247,199,140,0.85)';
+      ctx.fillStyle = 'rgba(247,199,140,0.8)';
       ctx.beginPath(); ctx.arc(sx,sy,r,0,Math.PI*2); ctx.fill();
       ctx.restore();
     }
-    ctx.strokeStyle = 'rgba(242,166,90,0.55)';
+    ctx.strokeStyle = 'rgba(242,166,90,0.5)';
     ctx.lineWidth = 6;
-    ctx.strokeRect(30,30,W-60,H-60);
-    ctx.font = "600 46px 'Space Grotesk'";
-    ctx.fillStyle = '#f2a65a';
+    ctx.strokeRect(28,28,W-56,H-56);
     ctx.textAlign = 'center';
-    ctx.fillText(names.host + ' & ' + names.guest, W/2, 110);
-    var fw = 760, fh = 620;
-    ctx.strokeStyle = 'rgba(242,166,90,0.6)';
-    ctx.lineWidth = 4;
-    ctx.strokeRect(120,160,fw,fh);
-    drawRoundedImage(ctx, hostImg, 120, 160, fw, fh, 2);
-    ctx.strokeStyle = 'rgba(242,166,90,0.6)';
-    ctx.strokeRect(120,830,fw,fh);
-    drawRoundedImage(ctx, guestImg, 120, 830, fw, fh, 2);
-    ctx.font = "22px 'JetBrains Mono'";
+    ctx.font = "600 38px 'Space Grotesk'";
+    ctx.fillStyle = '#f2a65a';
+    ctx.fillText(names.host + ' & ' + names.guest, W/2, 100);
+
+    for(var i2=0;i2<totalShots;i2++){
+      var y2 = topMargin + i2*(frameH+gapY);
+      ctx.strokeStyle = 'rgba(242,166,90,0.55)';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(frameX, y2, frameW, frameH - captionH);
+      drawPairInto(hostImgs[i2], guestImgs[i2], frameX+pad, y2+pad, squareSize, gapPhotos);
+      ctx.font = "18px 'JetBrains Mono'";
+      ctx.fillStyle = 'rgba(247,199,140,0.75)';
+      ctx.textAlign = 'left';
+      ctx.fillText('FRAME 0' + (i2+1), frameX+pad, y2 + frameH - 14);
+    }
+
+    ctx.font = "20px 'JetBrains Mono'";
     ctx.fillStyle = 'rgba(247,199,140,0.8)';
-    ctx.textAlign = 'left';
-    ctx.fillText('SYNC OK · ' + dateStr, 120, 1500);
+    ctx.textAlign = 'center';
+    ctx.fillText('SYNC OK · ' + dateStr, W/2, H - 130);
     if(message){
-      ctx.textAlign = 'right';
-      ctx.fillText(message, 880, 1500);
+      ctx.fillText(message, W/2, H - 95);
     }
   }
 
   else if(tpl === 'pink'){
-    var pg = ctx.createLinearGradient(0,0,W,H);
+    var pg = ctx.createLinearGradient(0,0,0,H);
     pg.addColorStop(0,'#f6dde1');
     pg.addColorStop(1,'#faf1ee');
     ctx.fillStyle = pg;
     ctx.fillRect(0,0,W,H);
-    for(var hcount=0; hcount<14; hcount++){
-      drawHeart(ctx, Math.random()*W, Math.random()*H*0.85, 18+Math.random()*22, 'rgba(212,83,126,0.18)');
+    for(var hc=0; hc<28; hc++){
+      drawHeart(ctx, Math.random()*W, Math.random()*H, 16+Math.random()*20, 'rgba(212,83,126,0.16)');
     }
-    ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,0.12)';
-    ctx.shadowBlur = 24;
-    ctx.shadowOffsetY = 8;
-    ctx.fillStyle = '#ffffff';
-    roundRectPath(ctx, 90, 120, 820, 630, 26);
-    ctx.fill();
-    ctx.restore();
-    drawRoundedImage(ctx, hostImg, 118, 148, 764, 574, 18);
-    ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,0.12)';
-    ctx.shadowBlur = 24;
-    ctx.shadowOffsetY = 8;
-    ctx.fillStyle = '#ffffff';
-    roundRectPath(ctx, 90, 800, 820, 630, 26);
-    ctx.fill();
-    ctx.restore();
-    drawRoundedImage(ctx, guestImg, 118, 828, 764, 574, 18);
-    ctx.font = "italic 600 50px 'Playfair Display'";
-    ctx.fillStyle = '#993556';
     ctx.textAlign = 'center';
-    ctx.fillText(names.host + ' & ' + names.guest, W/2, 1490);
-    if(message){
-      ctx.font = "italic 26px 'Playfair Display'";
-      ctx.fillStyle = '#a8637c';
-      ctx.fillText(message, W/2, 1530);
+    ctx.font = "italic 600 40px 'Playfair Display'";
+    ctx.fillStyle = '#993556';
+    ctx.fillText(names.host + ' & ' + names.guest, W/2, 100);
+
+    for(var i3=0;i3<totalShots;i3++){
+      var y3 = topMargin + i3*(frameH+gapY);
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.14)';
+      ctx.shadowBlur = 22;
+      ctx.shadowOffsetY = 8;
+      ctx.fillStyle = '#ffffff';
+      roundRectPath(ctx, frameX, y3, frameW, frameH, 22);
+      ctx.fill();
+      ctx.restore();
+      drawPairInto(hostImgs[i3], guestImgs[i3], frameX+pad, y3+pad, squareSize, gapPhotos);
+      drawHeart(ctx, frameX + frameW - 22, y3 + frameH - 22, 14, 'rgba(212,83,126,0.55)');
     }
+
+    ctx.font = "italic 30px 'Playfair Display'";
+    ctx.fillStyle = '#a8637c';
+    ctx.textAlign = 'center';
+    ctx.fillText(message || 'sampai jumpa lagi', W/2, H - 130);
+    ctx.font = "20px 'Playfair Display'";
+    ctx.fillText(dateStr, W/2, H - 95);
   }
 
   else if(tpl === 'film'){
     ctx.fillStyle = '#0c0c0c';
     ctx.fillRect(0,0,W,H);
-    var holeR = 12;
-    for(var hy=40; hy<H-40; hy+=70){
+    var holeR = 11;
+    for(var hy=36; hy<H-30; hy+=64){
       ctx.fillStyle = '#f4f1ea';
-      ctx.beginPath(); ctx.arc(45, hy, holeR, 0, Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.arc(W-45, hy, holeR, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(40, hy, holeR, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(W-40, hy, holeR, 0, Math.PI*2); ctx.fill();
     }
-    var gsHost = grayscaleImageToCanvas(hostImg);
-    var gsGuest = grayscaleImageToCanvas(guestImg);
-    drawRoundedImage(ctx, gsHost, 120, 130, 760, 600, 0);
-    drawRoundedImage(ctx, gsGuest, 120, 780, 760, 600, 0);
-    ctx.strokeStyle = '#f4f1ea';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(120,130,760,600);
-    ctx.strokeRect(120,780,760,600);
-    ctx.font = "20px 'JetBrains Mono'";
-    ctx.fillStyle = '#f4f1ea';
-    ctx.textAlign = 'left';
-    ctx.fillText('FRAME 01', 120, 112);
-    ctx.textAlign = 'right';
-    ctx.fillText('FRAME 02', 880, 762);
-    ctx.font = "34px 'JetBrains Mono'";
     ctx.textAlign = 'center';
-    ctx.fillText(names.host + ' x ' + names.guest, W/2, 1470);
+    ctx.font = "30px 'JetBrains Mono'";
+    ctx.fillStyle = '#f4f1ea';
+    ctx.fillText(names.host + ' x ' + names.guest, W/2, 100);
+
+    for(var i4=0;i4<totalShots;i4++){
+      var y4 = topMargin + i4*(frameH+gapY);
+      var gsHost = hostImgs[i4] ? grayscaleImageToCanvas(hostImgs[i4]) : null;
+      var gsGuest = guestImgs[i4] ? grayscaleImageToCanvas(guestImgs[i4]) : null;
+      drawPairInto(gsHost, gsGuest, frameX+pad, y4+pad, squareSize, gapPhotos);
+      ctx.strokeStyle = '#f4f1ea';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(frameX+pad, y4+pad, squareSize, squareSize);
+      ctx.strokeRect(frameX+pad+squareSize+gapPhotos, y4+pad, squareSize, squareSize);
+      ctx.font = "16px 'JetBrains Mono'";
+      ctx.fillStyle = 'rgba(244,241,234,0.7)';
+      ctx.textAlign = 'left';
+      ctx.fillText('FRAME 0' + (i4+1), frameX+pad, y4 + frameH - 14);
+    }
+
     ctx.font = "18px 'JetBrains Mono'";
     ctx.fillStyle = 'rgba(244,241,234,0.65)';
-    ctx.fillText((message ? message + '  ·  ' : '') + dateStr, W/2, 1508);
+    ctx.textAlign = 'center';
+    ctx.fillText((message ? message + '  ·  ' : '') + dateStr, W/2, H - 100);
   }
 }
 
@@ -1048,7 +1190,8 @@ async function tick(){
 
   if(room.round !== state.lastRound){
     state.lastRound = room.round;
-    state.capturedThisRound = false;
+    state.lastCapturedShotIndex = null;
+    state.advancing = false;
   }
 
   var names = room.names || { host:'Kamu', guest:'Dia' };
@@ -1070,9 +1213,11 @@ async function tick(){
     return;
   }
 
-  var bothPhotos = room.hostPhoto && room.guestPhoto;
+  var totalShots = room.totalShots || 4;
+  var hostDone = (room.hostPhotos || []).length >= totalShots;
+  var guestDone = (room.guestPhotos || []).length >= totalShots;
 
-  if(bothPhotos){
+  if(hostDone && guestDone){
     showScreen('result');
     await renderResult(room);
     return;
