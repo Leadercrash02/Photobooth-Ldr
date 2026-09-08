@@ -208,6 +208,13 @@ textarea:focus{ border-color:var(--amber); }
 .tpl-swatch.amber{ background:linear-gradient(135deg,#161a30,#3a2a12,#f2a65a); }
 .tpl-swatch.pink{ background:linear-gradient(135deg,#f6dde1,#e8b4bc); }
 .tpl-swatch.film{ background:repeating-linear-gradient(90deg,#111 0 8px,#222 8px 16px); }
+.tpl-swatch.mono{ background:linear-gradient(135deg,#0d0d0d,#5a5a5a 55%,#f5f5f5); }
+.tpl-swatch.sunset{ background:linear-gradient(135deg,#ffb27a,#ff7aa8 55%,#6a4c93); }
+.tpl-swatch.neon{ background:radial-gradient(circle at 28% 30%,rgba(0,240,255,0.45),transparent 55%),radial-gradient(circle at 72% 70%,rgba(255,43,214,0.45),transparent 55%),#0a0512; }
+.tpl-swatch.kraft{ background:linear-gradient(135deg,#cdab7a,#b6905c); }
+.tpl-swatch.merah{ background:linear-gradient(135deg,#f7ece7,#c98a86 60%,#7a2432); }
+.tpl-swatch.kuningpudar{ background:linear-gradient(135deg,#e8dfb0,#b7a94a); }
+.tpl-swatch.emeraldgold{ background:linear-gradient(135deg,#0d2b28,#1f4a42 60%,#d4af5a); }
 .tpl-name{ font-size:13px; font-weight:500; }
 
 .video-wrap{
@@ -322,9 +329,9 @@ video{
 
     <div class="card">
       <div class="field-label">Nama kamu</div>
-      <input type="text" id="hostNameInput" value="Ray" maxlength="16" style="margin-bottom:14px;">
+      <input type="text" id="hostNameInput" placeholder="misal: Kamu" maxlength="16" style="margin-bottom:14px;">
       <div class="field-label">Nama pasangan</div>
-      <input type="text" id="guestNameInput" value="Risma" maxlength="16" style="margin-bottom:18px;">
+      <input type="text" id="guestNameInput" placeholder="misal: Dia" maxlength="16" style="margin-bottom:18px;">
       <button class="btn btn-primary" id="btnCreateRoom">Buat room baru</button>
     </div>
 
@@ -373,6 +380,34 @@ video{
       <div class="tpl-option" data-tpl="film">
         <div class="tpl-swatch film"></div>
         <div class="tpl-name">Film Grain</div>
+      </div>
+      <div class="tpl-option" data-tpl="mono">
+        <div class="tpl-swatch mono"></div>
+        <div class="tpl-name">Mono Elegan</div>
+      </div>
+      <div class="tpl-option" data-tpl="sunset">
+        <div class="tpl-swatch sunset"></div>
+        <div class="tpl-name">Golden Sunset</div>
+      </div>
+      <div class="tpl-option" data-tpl="neon">
+        <div class="tpl-swatch neon"></div>
+        <div class="tpl-name">Neon City</div>
+      </div>
+      <div class="tpl-option" data-tpl="kraft">
+        <div class="tpl-swatch kraft"></div>
+        <div class="tpl-name">Kraft Scrapbook</div>
+      </div>
+      <div class="tpl-option" data-tpl="merah">
+        <div class="tpl-swatch merah"></div>
+        <div class="tpl-name">Merah Vintage</div>
+      </div>
+      <div class="tpl-option" data-tpl="kuningpudar">
+        <div class="tpl-swatch kuningpudar"></div>
+        <div class="tpl-name">Kuning Pudar</div>
+      </div>
+      <div class="tpl-option" data-tpl="emeraldgold">
+        <div class="tpl-swatch emeraldgold"></div>
+        <div class="tpl-name">Emerald Gold</div>
       </div>
     </div>
     <div class="field-label">Pesan singkat buat foto (opsional)</div>
@@ -433,6 +468,7 @@ var state = {
   advancing:false,
   countdownTimer:null,
   stream:null,
+  wakeLock:null,
   lastCountdownShown:null,
 };
 
@@ -535,9 +571,18 @@ async function patchRoom(subPath, obj){
   }catch(e){ console.error('firebase patch failed', e); lastFirebaseError = 'NETWORK: ' + e.message; return false; }
 }
 
+async function requestWakeLock(){
+  try{
+    if('wakeLock' in navigator && !state.wakeLock){
+      state.wakeLock = await navigator.wakeLock.request('screen');
+      state.wakeLock.addEventListener('release', function(){ state.wakeLock = null; });
+    }
+  }catch(e){ /* gak fatal kalau gagal, lanjut aja */ }
+}
+
 async function startCamera(){
   try{
-    if(state.stream) return state.stream;
+    if(state.stream){ requestWakeLock(); return state.stream; }
     var stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'user' }, audio:false });
     state.stream = stream;
     var video = document.getElementById('video');
@@ -550,6 +595,7 @@ async function startCamera(){
       console.error('video.play() failed', playErr);
       document.getElementById('captureSub').textContent = 'Kamera nyala tapi video gak bisa diputar (' + playErr.name + ').';
     }
+    requestWakeLock();
     return stream;
   }catch(e){
     console.error('getUserMedia failed', e);
@@ -642,6 +688,7 @@ function leaveRoom(){
   clearInterval(state.poller);
   if(state.countdownTimer) clearInterval(state.countdownTimer);
   if(state.stream){ state.stream.getTracks().forEach(function(t){ t.stop(); }); state.stream = null; }
+  if(state.wakeLock){ state.wakeLock.release().catch(function(){}); state.wakeLock = null; }
   state.role = null; state.code = null; state.lastRound = -1; state.lastCapturedShotIndex = null; state.advancing = false;
   document.getElementById('joinCodeInput').value = '';
   document.getElementById('joinError').textContent = '';
@@ -674,9 +721,9 @@ document.getElementById('messageInput').addEventListener('change', async functio
 document.getElementById('btnStartCountdown').addEventListener('click', async function(){
   var room = await getRoom(state.code);
   if(!room || room.countdownStart) return;
-  if((room.shotIndex||0) !== 0) return;
-  room.countdownStart = Date.now() + 3200;
-  await setRoom(state.code, room);
+  // Sengaja gak dibatasi cuma shotIndex 0 — tombol ini juga dipakai buat
+  // "coba lagi" kalau upload foto ke-2/3/4/dst gagal (lihat handleCaptureTick).
+  await patchRoom(state.code, { countdownStart: Date.now() + 3200 });
 });
 
 document.getElementById('btnRetake').addEventListener('click', async function(){
@@ -808,8 +855,13 @@ async function handleCaptureTick(room){
       otherNote.textContent = (shotIndex + 1 < totalShots)
         ? 'Foto ke-' + (shotIndex+1) + ' dari ' + totalShots + ' selesai! Bersiap foto berikutnya...'
         : 'Semua foto udah lengkap, lagi digabung jadi strip...';
-      if(state.role === 'host' && !state.advancing){
+      if(!state.advancing){
         state.advancing = true;
+        // Host coba duluan (1300ms). Kalau host device-nya lagi macet/layar
+        // mati/tab ke-throttle pas lagi pose bareng, device pasangan (guest)
+        // bakal nyusul ambil alih di 3200ms biar prosesnya gak nyangkut
+        // selamanya di "Bersiap ya...".
+        var myDelay = state.role === 'host' ? 1300 : 3200;
         setTimeout(async function(){
           var fresh = await getRoom(state.code);
           if(fresh && fresh.round === room.round && (fresh.shotIndex||0) === shotIndex){
@@ -822,7 +874,7 @@ async function handleCaptureTick(room){
             });
           }
           state.advancing = false;
-        }, 1300);
+        }, myDelay);
       }
     } else {
       otherNote.textContent = 'Nunggu foto dari ' + otherName + '...';
@@ -848,8 +900,9 @@ async function handleCaptureTick(room){
         var uploaded = await uploadShotWithFallback(video, state.code, myPhotoField, shotIndex, room.round);
         if(!uploaded){
           state.lastCapturedShotIndex = null;
-          otherNote.textContent = 'Gagal upload foto, coba klik lagi ya.';
-          if(shotIndex === 0){ btn.style.display = 'block'; }
+          otherNote.textContent = 'Gagal upload foto ke-' + (shotIndex+1) + ', klik tombol di bawah buat coba lagi ya.';
+          btn.textContent = 'Coba lagi ambil foto ' + (shotIndex+1);
+          btn.style.display = 'block';
           var freshReset = await getRoom(state.code);
           if(freshReset && freshReset.round === room.round && (freshReset.shotIndex||0) === shotIndex){
             await patchRoom(state.code, { countdownStart: null });
@@ -860,8 +913,9 @@ async function handleCaptureTick(room){
   } else {
     cdEl.style.display = 'none';
     if(shotIndex === 0){
+      btn.textContent = 'Ambil foto bareng (' + totalShots + 'x otomatis)';
       btn.style.display = 'block';
-      otherNote.textContent = 'Klik tombol kalau berdua udah siap di depan kamera. 4 foto bakal kejepret otomatis berurutan.';
+      otherNote.textContent = 'Klik tombol kalau berdua udah siap di depan kamera. ' + totalShots + ' foto bakal kejepret otomatis berurutan.';
     } else {
       btn.style.display = 'none';
       otherNote.textContent = 'Bersiap buat foto berikutnya...';
@@ -1031,11 +1085,14 @@ async function renderResult(room){
   canvas.width = W; canvas.height = H;
   var ctx = canvas.getContext('2d');
 
-  function drawPairInto(imgL, imgR, x, y, size, gap){
+  function drawPairInto(imgL, imgR, x, y, size, gap, filter){
+    var prevFilter = ctx.filter;
+    if(filter) ctx.filter = filter;
     if(imgL) drawRoundedImage(ctx, imgL, x, y, size, size, 4);
     else { ctx.fillStyle = '#ddd'; ctx.fillRect(x, y, size, size); }
     if(imgR) drawRoundedImage(ctx, imgR, x + size + gap, y, size, size, 4);
     else { ctx.fillStyle = '#ddd'; ctx.fillRect(x + size + gap, y, size, size); }
+    ctx.filter = prevFilter || 'none';
   }
 
   if(tpl === 'classic'){
@@ -1204,6 +1261,277 @@ async function renderResult(room){
     ctx.font = "18px 'JetBrains Mono'";
     ctx.fillStyle = 'rgba(244,241,234,0.65)';
     ctx.textAlign = 'center';
+    ctx.fillText((message ? message + '  ·  ' : '') + dateStr, W/2, H - 100);
+  }
+
+  else if(tpl === 'mono'){
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0,0,W,H);
+    ctx.textAlign = 'center';
+    ctx.font = "600 30px 'Space Grotesk'";
+    ctx.fillStyle = '#111';
+    ctx.fillText((names.host + '  ×  ' + names.guest).toUpperCase(), W/2, 96);
+    ctx.font = "12px 'JetBrains Mono'";
+    ctx.fillStyle = '#999';
+    ctx.fillText('PHOTOBOOTH · JARAK JAUH', W/2, 122);
+
+    for(var im=0; im<totalShots; im++){
+      var ym = topMargin + im*(frameH+gapY);
+      ctx.strokeStyle = '#111';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(frameX, ym, frameW, frameH - captionH);
+      var gsHm = hostImgs[im] ? grayscaleImageToCanvas(hostImgs[im]) : null;
+      var gsGm = guestImgs[im] ? grayscaleImageToCanvas(guestImgs[im]) : null;
+      drawPairInto(gsHm, gsGm, frameX+pad, ym+pad, squareSize, gapPhotos);
+      ctx.font = "16px 'JetBrains Mono'";
+      ctx.fillStyle = '#111';
+      ctx.textAlign = 'left';
+      ctx.fillText(('0'+(im+1)).slice(-2) + ' / ' + ('0'+totalShots).slice(-2), frameX+pad, ym + frameH - 14);
+    }
+
+    ctx.textAlign = 'center';
+    ctx.font = "22px 'Space Grotesk'";
+    ctx.fillStyle = '#111';
+    ctx.fillText(message || 'walau jauh, tetap bersama', W/2, H - 120);
+    ctx.font = "13px 'JetBrains Mono'";
+    ctx.fillStyle = '#999';
+    ctx.fillText(dateStr, W/2, H - 92);
+  }
+
+  else if(tpl === 'sunset'){
+    var sg = ctx.createLinearGradient(0,0,0,H);
+    sg.addColorStop(0,'#ffb27a');
+    sg.addColorStop(0.5,'#ff7aa8');
+    sg.addColorStop(1,'#6a4c93');
+    ctx.fillStyle = sg;
+    ctx.fillRect(0,0,W,H);
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = '#fff2c2';
+    ctx.beginPath(); ctx.arc(W/2, 150, 90, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+
+    ctx.textAlign = 'center';
+    ctx.font = "italic 600 40px 'Playfair Display'";
+    ctx.fillStyle = '#3a1f3d';
+    ctx.fillText(names.host + ' & ' + names.guest, W/2, 108);
+
+    for(var isu=0; isu<totalShots; isu++){
+      var ysu = topMargin + isu*(frameH+gapY);
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.2)'; ctx.shadowBlur = 20; ctx.shadowOffsetY = 10;
+      ctx.fillStyle = 'rgba(255,255,255,0.92)';
+      roundRectPath(ctx, frameX, ysu, frameW, frameH, 18);
+      ctx.fill();
+      ctx.restore();
+      drawPairInto(hostImgs[isu], guestImgs[isu], frameX+pad, ysu+pad, squareSize, gapPhotos);
+      ctx.font = "18px 'JetBrains Mono'";
+      ctx.fillStyle = '#a34e73';
+      ctx.textAlign = 'left';
+      ctx.fillText('GOLDEN HOUR #' + (isu+1), frameX+pad, ysu + frameH - 14);
+    }
+
+    ctx.textAlign = 'center';
+    ctx.font = "italic 30px 'Playfair Display'";
+    ctx.fillStyle = '#3a1f3d';
+    ctx.fillText(message || 'golden hour, kita berdua', W/2, H - 130);
+    ctx.font = "20px 'JetBrains Mono'";
+    ctx.fillStyle = 'rgba(58,31,61,0.7)';
+    ctx.fillText(dateStr, W/2, H - 95);
+  }
+
+  else if(tpl === 'neon'){
+    ctx.fillStyle = '#08040f';
+    ctx.fillRect(0,0,W,H);
+    ctx.strokeStyle = 'rgba(0,240,255,0.08)';
+    ctx.lineWidth = 1;
+    for(var gx=0; gx<W; gx+=40){ ctx.beginPath(); ctx.moveTo(gx,0); ctx.lineTo(gx,H); ctx.stroke(); }
+    for(var gy=0; gy<H; gy+=40){ ctx.beginPath(); ctx.moveTo(0,gy); ctx.lineTo(W,gy); ctx.stroke(); }
+
+    ctx.textAlign = 'center';
+    ctx.font = "700 38px 'Space Grotesk'";
+    ctx.fillStyle = '#00f0ff';
+    ctx.shadowColor = '#00f0ff'; ctx.shadowBlur = 20;
+    ctx.fillText(names.host + ' + ' + names.guest, W/2, 104);
+    ctx.shadowBlur = 0;
+
+    for(var ine=0; ine<totalShots; ine++){
+      var yne = topMargin + ine*(frameH+gapY);
+      var neonColor = ine % 2 === 0 ? '#00f0ff' : '#ff2bd6';
+      ctx.save();
+      ctx.shadowColor = neonColor;
+      ctx.shadowBlur = 16;
+      ctx.strokeStyle = neonColor;
+      ctx.lineWidth = 2.5;
+      roundRectPath(ctx, frameX, yne, frameW, frameH - captionH, 10);
+      ctx.stroke();
+      ctx.restore();
+      drawPairInto(hostImgs[ine], guestImgs[ine], frameX+pad, yne+pad, squareSize, gapPhotos);
+      ctx.font = "16px 'JetBrains Mono'";
+      ctx.fillStyle = neonColor;
+      ctx.textAlign = 'left';
+      ctx.fillText('SIGNAL_0' + (ine+1), frameX+pad, yne + frameH - 14);
+    }
+
+    ctx.textAlign = 'center';
+    ctx.font = "20px 'JetBrains Mono'";
+    ctx.fillStyle = '#00f0ff';
+    ctx.fillText((message ? message + '  ·  ' : '') + dateStr, W/2, H - 100);
+  }
+
+  else if(tpl === 'kraft'){
+    var kg = ctx.createLinearGradient(0,0,W,H);
+    kg.addColorStop(0,'#cdab7a');
+    kg.addColorStop(1,'#b6905c');
+    ctx.fillStyle = kg;
+    ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = 'rgba(0,0,0,0.04)';
+    for(var nk=0;nk<800;nk++){
+      ctx.beginPath();
+      ctx.arc(Math.random()*W, Math.random()*H, Math.random()*1.4, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.textAlign = 'center';
+    ctx.font = "34px 'Caveat'";
+    ctx.fillStyle = '#3f2c14';
+    ctx.fillText(names.host + ' & ' + names.guest, W/2, 100);
+
+    for(var ik=0;ik<totalShots;ik++){
+      var yk = topMargin + ik*(frameH+gapY);
+      var rotk = (ik % 2 === 0 ? -1.4 : 1.4) * (0.01 + ik*0.002);
+      ctx.save();
+      ctx.translate(frameX+frameW/2, yk+frameH/2);
+      ctx.rotate(rotk);
+      ctx.translate(-frameW/2, -frameH/2);
+      ctx.shadowColor = 'rgba(0,0,0,0.3)'; ctx.shadowBlur = 18; ctx.shadowOffsetY = 10;
+      ctx.fillStyle = '#fdf8ef';
+      roundRectPath(ctx, 0, 0, frameW, frameH, 4);
+      ctx.fill();
+      ctx.shadowColor = 'transparent';
+      drawPairInto(hostImgs[ik], guestImgs[ik], pad, pad, squareSize, gapPhotos);
+      ctx.font = "24px 'Caveat'";
+      ctx.fillStyle = '#7a5c34';
+      ctx.textAlign = 'left';
+      ctx.fillText('memori #' + (ik+1), pad+2, frameH - 14);
+      ctx.restore();
+      drawWashiTape(ctx, frameX+30, yk, 70, 30, -0.3, 'rgba(232,196,120,0.9)', 'rgba(219,170,90,0.9)');
+    }
+
+    ctx.textAlign = 'center';
+    ctx.font = "32px 'Caveat'";
+    ctx.fillStyle = '#3f2c14';
+    ctx.fillText(message || 'disimpen baik-baik ya', W/2, H - 130);
+    ctx.font = "20px 'JetBrains Mono'";
+    ctx.fillStyle = 'rgba(63,44,20,0.65)';
+    ctx.fillText(dateStr, W/2, H - 92);
+  }
+
+  else if(tpl === 'merah'){
+    ctx.fillStyle = '#f7ece7';
+    ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = 'rgba(120,30,30,0.03)';
+    for(var nr=0;nr<600;nr++){
+      ctx.beginPath();
+      ctx.arc(Math.random()*W, Math.random()*H, Math.random()*1.3, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.textAlign = 'center';
+    ctx.font = "italic 600 40px 'Playfair Display'";
+    ctx.fillStyle = '#7a2432';
+    ctx.fillText(names.host + ' & ' + names.guest, W/2, 104);
+
+    var redFilter = 'sepia(0.55) saturate(2) hue-rotate(-28deg) contrast(1.05) brightness(0.92)';
+    for(var ir=0;ir<totalShots;ir++){
+      var yr = topMargin + ir*(frameH+gapY);
+      ctx.save();
+      ctx.shadowColor = 'rgba(122,36,50,0.25)';
+      ctx.shadowBlur = 22; ctx.shadowOffsetY = 10;
+      ctx.fillStyle = '#fffaf7';
+      roundRectPath(ctx, frameX, yr, frameW, frameH, 14);
+      ctx.fill();
+      ctx.restore();
+      drawPairInto(hostImgs[ir], guestImgs[ir], frameX+pad, yr+pad, squareSize, gapPhotos, redFilter);
+      drawHeart(ctx, frameX + frameW - 22, yr + frameH - 22, 14, 'rgba(122,36,50,0.55)');
+      ctx.font = "16px 'JetBrains Mono'";
+      ctx.fillStyle = '#7a2432';
+      ctx.textAlign = 'left';
+      ctx.fillText('#' + (ir+1), frameX+pad, yr + frameH - 14);
+    }
+
+    ctx.textAlign = 'center';
+    ctx.font = "italic 30px 'Playfair Display'";
+    ctx.fillStyle = '#7a2432';
+    ctx.fillText(message || 'sayang, walau LDR-an', W/2, H - 130);
+    ctx.font = "20px 'JetBrains Mono'";
+    ctx.fillStyle = 'rgba(122,36,50,0.7)';
+    ctx.fillText(dateStr, W/2, H - 95);
+  }
+
+  else if(tpl === 'kuningpudar'){
+    ctx.fillStyle = '#f4efdd';
+    ctx.fillRect(0,0,W,H);
+    ctx.textAlign = 'center';
+    ctx.font = "600 34px 'Space Grotesk'";
+    ctx.fillStyle = '#5c5324';
+    ctx.fillText(names.host + ' & ' + names.guest, W/2, 100);
+
+    var yellowFilter = 'sepia(0.6) saturate(1.4) hue-rotate(8deg) brightness(1.05) contrast(0.95)';
+    for(var iy=0;iy<totalShots;iy++){
+      var yy = topMargin + iy*(frameH+gapY);
+      ctx.strokeStyle = 'rgba(150,135,60,0.4)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(frameX, yy, frameW, frameH - captionH);
+      drawPairInto(hostImgs[iy], guestImgs[iy], frameX+pad, yy+pad, squareSize, gapPhotos, yellowFilter);
+      ctx.font = "16px 'JetBrains Mono'";
+      ctx.fillStyle = '#7a6f30';
+      ctx.textAlign = 'left';
+      ctx.fillText('0' + (iy+1) + ' / 0' + totalShots, frameX+pad, yy + frameH - 14);
+    }
+
+    ctx.textAlign = 'center';
+    ctx.font = "24px 'Space Grotesk'";
+    ctx.fillStyle = '#5c5324';
+    ctx.fillText(message || 'sederhana tapi berkesan', W/2, H - 120);
+    ctx.font = "18px 'JetBrains Mono'";
+    ctx.fillStyle = 'rgba(92,83,36,0.7)';
+    ctx.fillText(dateStr, W/2, H - 90);
+  }
+
+  else if(tpl === 'emeraldgold'){
+    var eg = ctx.createLinearGradient(0,0,0,H);
+    eg.addColorStop(0,'#0d2b28');
+    eg.addColorStop(1,'#061614');
+    ctx.fillStyle = eg;
+    ctx.fillRect(0,0,W,H);
+    ctx.strokeStyle = 'rgba(212,175,90,0.6)';
+    ctx.lineWidth = 5;
+    ctx.strokeRect(24,24,W-48,H-48);
+    ctx.textAlign = 'center';
+    ctx.font = "italic 600 38px 'Playfair Display'";
+    ctx.fillStyle = '#d4af5a';
+    ctx.fillText(names.host + ' & ' + names.guest, W/2, 100);
+
+    var tealFilter = 'grayscale(0.25) sepia(0.35) hue-rotate(140deg) saturate(1.5) brightness(0.85) contrast(1.1)';
+    for(var ie=0;ie<totalShots;ie++){
+      var ye = topMargin + ie*(frameH+gapY);
+      ctx.strokeStyle = 'rgba(212,175,90,0.75)';
+      ctx.lineWidth = 3;
+      roundRectPath(ctx, frameX, ye, frameW, frameH - captionH, 8);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(212,175,90,0.35)';
+      ctx.lineWidth = 1;
+      roundRectPath(ctx, frameX+6, ye+6, frameW-12, frameH-captionH-12, 6);
+      ctx.stroke();
+      drawPairInto(hostImgs[ie], guestImgs[ie], frameX+pad, ye+pad, squareSize, gapPhotos, tealFilter);
+      ctx.font = "16px 'JetBrains Mono'";
+      ctx.fillStyle = '#d4af5a';
+      ctx.textAlign = 'left';
+      ctx.fillText('MEMORY 0' + (ie+1), frameX+pad, ye + frameH - 14);
+    }
+
+    ctx.textAlign = 'center';
+    ctx.font = "20px 'JetBrains Mono'";
+    ctx.fillStyle = '#d4af5a';
     ctx.fillText((message ? message + '  ·  ' : '') + dateStr, W/2, H - 100);
   }
 }
