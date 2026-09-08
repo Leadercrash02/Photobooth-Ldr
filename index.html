@@ -215,6 +215,10 @@ textarea:focus{ border-color:var(--amber); }
 .tpl-swatch.merah{ background:linear-gradient(135deg,#f7ece7,#c98a86 60%,#7a2432); }
 .tpl-swatch.kuningpudar{ background:linear-gradient(135deg,#e8dfb0,#b7a94a); }
 .tpl-swatch.emeraldgold{ background:linear-gradient(135deg,#0d2b28,#1f4a42 60%,#d4af5a); }
+.tpl-swatch.denim{ background:repeating-linear-gradient(45deg,#3d5c80 0 3px,#33507a 3px 6px); }
+.tpl-swatch.valentine{ background:linear-gradient(135deg,#ff5c7a,#c81f47); }
+.tpl-swatch.annivgold{ background:linear-gradient(135deg,#0a0a0c,#1c1a12 55%,#e6be6e); }
+.tpl-swatch.muah{ background:linear-gradient(135deg,#fffaf9,#fbd2d9 60%,#e63950); }
 .tpl-name{ font-size:13px; font-weight:500; }
 
 .video-wrap{
@@ -263,6 +267,46 @@ video{
   font-size:12px; font-weight:600;
   padding:5px 10px; border-radius:20px;
   font-family:'Inter', sans-serif;
+}
+
+.peer-video-wrap{
+  position:absolute;
+  right:10px; bottom:10px;
+  width:34%;
+  aspect-ratio:3/4;
+  border-radius:12px;
+  overflow:hidden;
+  border:2px solid rgba(255,255,255,0.85);
+  box-shadow:0 6px 18px rgba(0,0,0,0.4);
+  background:#111;
+}
+.peer-video-wrap video{
+  width:100%; height:100%; object-fit:cover;
+  transform:scaleX(-1);
+}
+.peer-status{
+  position:absolute; left:6px; bottom:6px;
+  font-size:10px; font-weight:600;
+  padding:3px 7px; border-radius:20px;
+  font-family:'Inter', sans-serif;
+  color:#fff;
+  background:rgba(0,0,0,0.55);
+}
+.peer-status.live{ background:rgba(99,196,122,0.85); color:#0b2c14; }
+.peer-status.connecting{ background:rgba(242,166,90,0.85); color:#3a2504; }
+.peer-status.off{ background:rgba(220,90,90,0.85); color:#fff; }
+.peer-mute-btn{
+  position:absolute; top:6px; right:6px;
+  width:24px; height:24px;
+  border-radius:50%;
+  border:none;
+  background:rgba(0,0,0,0.55);
+  color:#fff;
+  font-size:12px;
+  line-height:24px;
+  text-align:center;
+  padding:0;
+  cursor:pointer;
 }
 
 .mini-note{ font-size:13px; color:var(--ink-dim); text-align:center; margin-top:4px; }
@@ -409,6 +453,22 @@ video{
         <div class="tpl-swatch emeraldgold"></div>
         <div class="tpl-name">Emerald Gold</div>
       </div>
+      <div class="tpl-option" data-tpl="denim">
+        <div class="tpl-swatch denim"></div>
+        <div class="tpl-name">Jeans All Done</div>
+      </div>
+      <div class="tpl-option" data-tpl="valentine">
+        <div class="tpl-swatch valentine"></div>
+        <div class="tpl-name">Valentine Love</div>
+      </div>
+      <div class="tpl-option" data-tpl="annivgold">
+        <div class="tpl-swatch annivgold"></div>
+        <div class="tpl-name">Anniversary Gold</div>
+      </div>
+      <div class="tpl-option" data-tpl="muah">
+        <div class="tpl-swatch muah"></div>
+        <div class="tpl-name">Muah Heart</div>
+      </div>
     </div>
     <div class="field-label">Pesan singkat buat foto (opsional)</div>
     <textarea id="messageInput" rows="2" maxlength="60" placeholder="misal: walau jauh, tetap bersama"></textarea>
@@ -428,6 +488,11 @@ video{
       <div class="flash-overlay" id="flashOverlay"></div>
       <div class="countdown-number" id="countdownNumber" style="display:none;"></div>
       <div class="captured-badge" id="capturedBadge" style="display:none;">Foto kamu udah masuk</div>
+      <div class="peer-video-wrap" id="peerVideoWrap">
+        <video id="peerVideo" autoplay playsinline></video>
+        <div class="peer-status connecting" id="peerStatusBadge">Nyambungin...</div>
+        <button class="peer-mute-btn" id="btnMutePeer" title="Bisukan suara pasangan">🔊</button>
+      </div>
     </div>
 
     <div class="shot-dots" id="shotDots"></div>
@@ -469,6 +534,11 @@ var state = {
   countdownTimer:null,
   stream:null,
   wakeLock:null,
+  pc:null,
+  rtcAnswered:false,
+  rtcGotAnswer:false,
+  rtcAppliedIce:{ host:0, guest:0 },
+  peerMuted:false,
   lastCountdownShown:null,
 };
 
@@ -571,6 +641,117 @@ async function patchRoom(subPath, obj){
   }catch(e){ console.error('firebase patch failed', e); lastFirebaseError = 'NETWORK: ' + e.message; return false; }
 }
 
+// Konfigurasi ICE: STUN publik Google (buat NAT sederhana) + TURN gratis
+// (Open Relay Project) buat jaga-jaga kalau salah satu jaringan (misal data
+// seluler dengan NAT ketat) gak bisa connect langsung. TURN gratis ini
+// dipakai bareng-bareng banyak orang, jadi kalau butuh koneksi yang lebih
+// stabil buat pemakaian jangka panjang/rame, sebaiknya ganti pakai TURN
+// sendiri (mis. akun gratis di metered.ca atau Twilio).
+var ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+];
+
+function setPeerStatus(text, cls){
+  var badge = document.getElementById('peerStatusBadge');
+  if(!badge) return;
+  badge.textContent = text;
+  badge.className = 'peer-status ' + cls;
+}
+
+// Bikin koneksi video/audio langsung (WebRTC) antara host & guest, pakai
+// Firebase (yang udah dipakai buat state room) sebagai jalur "signaling"
+// buat tuker-tukeran SDP offer/answer & ICE candidate.
+async function setupWebRTC(){
+  if(state.pc || !state.stream || typeof RTCPeerConnection === 'undefined') return;
+  try{
+    state.pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+  }catch(e){ console.error('RTCPeerConnection gagal dibuat', e); return; }
+
+  state.stream.getTracks().forEach(function(track){ state.pc.addTrack(track, state.stream); });
+
+  state.pc.ontrack = function(ev){
+    var peerVideo = document.getElementById('peerVideo');
+    if(peerVideo && peerVideo.srcObject !== ev.streams[0]){
+      peerVideo.srcObject = ev.streams[0];
+    }
+  };
+
+  state.pc.onconnectionstatechange = function(){
+    var cs = state.pc.connectionState;
+    if(cs === 'connected'){ setPeerStatus('Live', 'live'); }
+    else if(cs === 'connecting' || cs === 'new'){ setPeerStatus('Nyambungin...', 'connecting'); }
+    else if(cs === 'disconnected' || cs === 'failed' || cs === 'closed'){ setPeerStatus('Terputus', 'off'); }
+  };
+
+  var myIceField = state.role === 'host' ? 'rtcHostCandidates' : 'rtcGuestCandidates';
+  state.pc.onicecandidate = function(ev){
+    if(ev.candidate) pushIceCandidate(myIceField, ev.candidate.toJSON());
+  };
+
+  if(state.role === 'host'){
+    try{
+      var offer = await state.pc.createOffer();
+      await state.pc.setLocalDescription(offer);
+      await patchRoom(state.code, { rtcHostOffer: JSON.stringify(offer) });
+    }catch(e){ console.error('gagal bikin offer', e); }
+  }
+}
+
+async function pushIceCandidate(field, candidate){
+  try{
+    var fresh = await getRoom(state.code);
+    var arr = (fresh && fresh[field]) || [];
+    arr = arr.concat([candidate]);
+    var patch = {};
+    patch[field] = arr;
+    await patchRoom(state.code, patch);
+  }catch(e){ /* ICE candidate gagal kekirim gak fatal, biar aja lanjut */ }
+}
+
+// Dipanggil tiap tick polling biasa (pakai data room yang sama, gak nambah
+// request baru) buat lanjutin proses tukar-tukaran offer/answer/ICE.
+async function pollRtcSignal(room){
+  if(!state.pc) return;
+  try{
+    if(state.role === 'guest' && room.rtcHostOffer && !state.rtcAnswered){
+      state.rtcAnswered = true;
+      var offerDesc = JSON.parse(room.rtcHostOffer);
+      await state.pc.setRemoteDescription(new RTCSessionDescription(offerDesc));
+      var answer = await state.pc.createAnswer();
+      await state.pc.setLocalDescription(answer);
+      await patchRoom(state.code, { rtcGuestAnswer: JSON.stringify(answer) });
+    }
+    if(state.role === 'host' && room.rtcGuestAnswer && !state.rtcGotAnswer){
+      state.rtcGotAnswer = true;
+      var answerDesc = JSON.parse(room.rtcGuestAnswer);
+      await state.pc.setRemoteDescription(new RTCSessionDescription(answerDesc));
+    }
+    // ICE candidate cuma boleh ditambahkan setelah remoteDescription ke-set
+    if(state.pc.remoteDescription){
+      var remoteKey = state.role === 'host' ? 'guest' : 'host';
+      var remoteField = state.role === 'host' ? 'rtcGuestCandidates' : 'rtcHostCandidates';
+      var remoteList = room[remoteField] || [];
+      var startIdx = state.rtcAppliedIce[remoteKey] || 0;
+      for(var i = startIdx; i < remoteList.length; i++){
+        try{ await state.pc.addIceCandidate(new RTCIceCandidate(remoteList[i])); }catch(e){}
+      }
+      state.rtcAppliedIce[remoteKey] = remoteList.length;
+    }
+  }catch(e){ console.error('rtc signal error', e); }
+}
+
+function closeWebRTC(){
+  if(state.pc){ try{ state.pc.close(); }catch(e){} state.pc = null; }
+  state.rtcAnswered = false;
+  state.rtcGotAnswer = false;
+  state.rtcAppliedIce = { host:0, guest:0 };
+  var peerVideo = document.getElementById('peerVideo');
+  if(peerVideo) peerVideo.srcObject = null;
+}
+
 async function requestWakeLock(){
   try{
     if('wakeLock' in navigator && !state.wakeLock){
@@ -583,7 +764,7 @@ async function requestWakeLock(){
 async function startCamera(){
   try{
     if(state.stream){ requestWakeLock(); return state.stream; }
-    var stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'user' }, audio:false });
+    var stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'user' }, audio:true });
     state.stream = stream;
     var video = document.getElementById('video');
     video.srcObject = stream;
@@ -689,6 +870,7 @@ function leaveRoom(){
   if(state.countdownTimer) clearInterval(state.countdownTimer);
   if(state.stream){ state.stream.getTracks().forEach(function(t){ t.stop(); }); state.stream = null; }
   if(state.wakeLock){ state.wakeLock.release().catch(function(){}); state.wakeLock = null; }
+  closeWebRTC();
   state.role = null; state.code = null; state.lastRound = -1; state.lastCapturedShotIndex = null; state.advancing = false;
   document.getElementById('joinCodeInput').value = '';
   document.getElementById('joinError').textContent = '';
@@ -696,6 +878,13 @@ function leaveRoom(){
 }
 ['btnLeaveFromTpl','btnLeaveFromCap','btnLeaveFromRes'].forEach(function(id){
   document.getElementById(id).addEventListener('click', leaveRoom);
+});
+
+document.getElementById('btnMutePeer').addEventListener('click', function(){
+  state.peerMuted = !state.peerMuted;
+  var peerVideo = document.getElementById('peerVideo');
+  peerVideo.muted = state.peerMuted;
+  this.textContent = state.peerMuted ? '🔇' : '🔊';
 });
 
 document.querySelectorAll('.tpl-option').forEach(function(el){
@@ -969,6 +1158,143 @@ function drawHeart(ctx, cx, cy, size, color){
   ctx.bezierCurveTo(cx, cy + size*0.8, cx + size*0.5, cy + size*0.6, cx + size*0.5, cy + size*0.3);
   ctx.bezierCurveTo(cx + size*0.5, cy, cx, cy, cx, cy + size*0.3);
   ctx.fill();
+  ctx.restore();
+}
+
+// versi outline (garis, gak diisi) buat gaya coretan/doodle sticker
+function drawHeartOutline(ctx, cx, cy, size, color, lineWidth){
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lineWidth || 2.5;
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(cx, cy + size*0.3);
+  ctx.bezierCurveTo(cx, cy, cx - size*0.5, cy, cx - size*0.5, cy + size*0.3);
+  ctx.bezierCurveTo(cx - size*0.5, cy + size*0.6, cx, cy + size*0.8, cx, cy + size);
+  ctx.bezierCurveTo(cx, cy + size*0.8, cx + size*0.5, cy + size*0.6, cx + size*0.5, cy + size*0.3);
+  ctx.bezierCurveTo(cx + size*0.5, cy, cx, cy, cx, cy + size*0.3);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// sticker boneka beruang kecil (bentuk sederhana, gaya flat vector)
+function drawBearSticker(ctx, cx, cy, size){
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(size/26, size/26);
+  // telinga
+  ctx.fillStyle = '#f3e2d8';
+  ctx.beginPath(); ctx.arc(-13, -14, 7, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(13, -14, 7, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#e8c3b0';
+  ctx.beginPath(); ctx.arc(-13, -14, 3.2, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(13, -14, 3.2, 0, Math.PI*2); ctx.fill();
+  // badan/kepala
+  ctx.fillStyle = '#f3e2d8';
+  ctx.beginPath(); ctx.ellipse(0, 4, 20, 18, 0, 0, Math.PI*2); ctx.fill();
+  // pipi
+  ctx.fillStyle = 'rgba(240,150,150,0.55)';
+  ctx.beginPath(); ctx.ellipse(-11, 8, 3.6, 2.4, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(11, 8, 3.6, 2.4, 0, 0, Math.PI*2); ctx.fill();
+  // mata & moncong
+  ctx.fillStyle = '#3a2c26';
+  ctx.beginPath(); ctx.arc(-7, 0, 1.6, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(7, 0, 1.6, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#fffaf5';
+  ctx.beginPath(); ctx.ellipse(0, 8, 7, 5, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#3a2c26';
+  ctx.beginPath(); ctx.arc(0, 6, 1.7, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+// tekstur jeans/denim: base warna biru + garis anyaman diagonal dua arah + butiran halus
+function drawDenimTexture(ctx, x, y, w, h){
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.clip();
+  var base = ctx.createLinearGradient(x, y, x + w, y + h);
+  base.addColorStop(0, '#3d5c80');
+  base.addColorStop(1, '#28405d');
+  ctx.fillStyle = base;
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+  ctx.lineWidth = 1;
+  var step = 5;
+  for(var dx = -h; dx < w; dx += step){
+    ctx.beginPath();
+    ctx.moveTo(x + dx, y);
+    ctx.lineTo(x + dx + h, y + h);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(0,0,0,0.10)';
+  for(var dx2 = -h + 2; dx2 < w; dx2 += step){
+    ctx.beginPath();
+    ctx.moveTo(x + dx2, y + h);
+    ctx.lineTo(x + dx2 + h, y);
+    ctx.stroke();
+  }
+  ctx.fillStyle = 'rgba(255,255,255,0.05)';
+  for(var ni = 0; ni < 500; ni++){
+    ctx.fillRect(x + Math.random()*w, y + Math.random()*h, 1, 1);
+  }
+  ctx.restore();
+}
+
+// bintang kecil berkilau (4 sudut), buat background bertabur bintang
+function drawSparkle(ctx, cx, cy, size, color){
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - size);
+  ctx.quadraticCurveTo(cx + size*0.18, cy - size*0.18, cx + size, cy);
+  ctx.quadraticCurveTo(cx + size*0.18, cy + size*0.18, cx, cy + size);
+  ctx.quadraticCurveTo(cx - size*0.18, cy + size*0.18, cx - size, cy);
+  ctx.quadraticCurveTo(cx - size*0.18, cy - size*0.18, cx, cy - size);
+  ctx.fill();
+  ctx.restore();
+}
+
+// path hati gede buat clip foto hero (cy = titik atas cekungan hati)
+function heartClipPath(ctx, cx, cy, size){
+  ctx.beginPath();
+  ctx.moveTo(cx, cy + size*0.35);
+  ctx.bezierCurveTo(cx, cy, cx - size, cy, cx - size, cy + size*0.4);
+  ctx.bezierCurveTo(cx - size, cy + size*0.8, cx - size*0.4, cy + size*1.15, cx, cy + size*1.55);
+  ctx.bezierCurveTo(cx + size*0.4, cy + size*1.15, cx + size, cy + size*0.8, cx + size, cy + size*0.4);
+  ctx.bezierCurveTo(cx + size, cy, cx, cy, cx, cy + size*0.35);
+  ctx.closePath();
+}
+
+// banner bendera segitiga kecil bertuliskan LOVE, gaya bunting/scrapbook
+function drawBuntingLove(ctx, cx, topY, totalWidth, dropHeight){
+  var letters = ['L','O','V','E'];
+  var flagW = totalWidth / letters.length;
+  var colors = ['#e63950','#ffffff','#e63950','#ffffff'];
+  ctx.save();
+  ctx.strokeStyle = '#e63950';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx - totalWidth/2, topY);
+  ctx.lineTo(cx + totalWidth/2, topY);
+  ctx.stroke();
+  for(var fl=0; fl<letters.length; fl++){
+    var fx = cx - totalWidth/2 + fl*flagW;
+    ctx.fillStyle = colors[fl];
+    ctx.beginPath();
+    ctx.moveTo(fx+3, topY);
+    ctx.lineTo(fx + flagW-3, topY);
+    ctx.lineTo(fx + flagW/2, topY + dropHeight);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = colors[fl] === '#ffffff' ? '#e63950' : '#ffffff';
+    ctx.font = "700 18px 'Space Grotesk'";
+    ctx.textAlign = 'center';
+    ctx.fillText(letters[fl], fx + flagW/2, topY + dropHeight*0.62);
+  }
   ctx.restore();
 }
 
@@ -1534,6 +1860,194 @@ async function renderResult(room){
     ctx.fillStyle = '#d4af5a';
     ctx.fillText((message ? message + '  ·  ' : '') + dateStr, W/2, H - 100);
   }
+
+  else if(tpl === 'denim'){
+    drawDenimTexture(ctx, 0, 0, W, H);
+
+    ctx.textAlign = 'center';
+    ctx.font = "800 42px 'Space Grotesk'";
+    ctx.fillStyle = '#f5f5f0';
+    ctx.fillText('ALL DONE', W/2 - 20, 92);
+    drawHeartOutline(ctx, W/2 + 84, 80, 16, '#f5f5f0', 3);
+
+    for(var idn=0; idn<totalShots; idn++){
+      var ydn = topMargin + idn*(frameH+gapY);
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.35)';
+      ctx.shadowBlur = 18; ctx.shadowOffsetY = 8;
+      ctx.fillStyle = '#f7f6f2';
+      ctx.fillRect(frameX, ydn, frameW, frameH - captionH);
+      ctx.restore();
+      drawPairInto(hostImgs[idn], guestImgs[idn], frameX+pad, ydn+pad, squareSize, gapPhotos);
+      ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(frameX, ydn, frameW, frameH - captionH);
+
+      // sticker doodle nempel antar-frame, biar kayak scrapbook beneran
+      if(idn === 0){
+        drawHeartOutline(ctx, frameX + frameW/2 - 24, ydn + frameH + 4, 15, '#e8455a', 3);
+        drawHeartOutline(ctx, frameX + frameW/2 + 8, ydn + frameH + 13, 11, '#e8455a', 2.5);
+        drawHeartOutline(ctx, frameX + frameW/2 - 6, ydn + frameH - 5, 9, '#e8455a', 2.2);
+      }
+      if(idn === totalShots - 2 || (totalShots < 2 && idn === 0)){
+        drawBearSticker(ctx, frameX + frameW/2, ydn + frameH + 2, 22);
+      }
+    }
+
+    ctx.textAlign = 'center';
+    ctx.font = "700 22px 'Space Grotesk'";
+    ctx.fillStyle = '#f5f5f0';
+    ctx.fillText(message || (names.host + ' & ' + names.guest), W/2, H - 130);
+    ctx.font = "18px 'JetBrains Mono'";
+    ctx.fillStyle = 'rgba(245,245,240,0.75)';
+    ctx.fillText(dateStr, W/2, H - 95);
+  }
+
+  else if(tpl === 'valentine'){
+    var vg = ctx.createLinearGradient(0,0,0,H);
+    vg.addColorStop(0, '#ff5c7a');
+    vg.addColorStop(1, '#c81f47');
+    ctx.fillStyle = vg;
+    ctx.fillRect(0,0,W,H);
+    for(var vh=0; vh<60; vh++){
+      drawHeartOutline(ctx, Math.random()*W, Math.random()*H, 8+Math.random()*10, 'rgba(255,255,255,0.12)', 2);
+    }
+
+    ctx.textAlign = 'center';
+    ctx.font = "900 46px 'Space Grotesk'";
+    ctx.fillStyle = '#fff';
+    ctx.fillText('I', W/2 - 68, 100);
+    drawHeart(ctx, W/2 - 6, 76, 20, '#fff');
+    ctx.fillText('U', W/2 + 62, 100);
+    ctx.font = "16px 'JetBrains Mono'";
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.fillText(names.host + ' & ' + names.guest, W/2, 128);
+
+    for(var iv=0; iv<totalShots; iv++){
+      var yv = topMargin + iv*(frameH+gapY);
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.25)'; ctx.shadowBlur = 20; ctx.shadowOffsetY = 8;
+      ctx.fillStyle = '#fff';
+      roundRectPath(ctx, frameX, yv, frameW, frameH - captionH, 16);
+      ctx.fill();
+      ctx.restore();
+      drawPairInto(hostImgs[iv], guestImgs[iv], frameX+pad, yv+pad, squareSize, gapPhotos);
+      drawHeart(ctx, frameX + frameW - 24, yv + frameH - captionH - 22, 12, '#ff5c7a');
+      ctx.font = "16px 'JetBrains Mono'";
+      ctx.fillStyle = '#c81f47';
+      ctx.textAlign = 'left';
+      ctx.fillText('LOVE #' + (iv+1), frameX+pad, yv + frameH - 14);
+    }
+
+    ctx.textAlign = 'center';
+    ctx.font = "700 26px 'Space Grotesk'";
+    ctx.fillStyle = '#fff';
+    ctx.fillText(message || 'happy valentine, sayang', W/2, H - 125);
+    ctx.font = "18px 'JetBrains Mono'";
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.fillText(dateStr, W/2, H - 92);
+  }
+
+  else if(tpl === 'annivgold'){
+    ctx.fillStyle = '#0a0a0c';
+    ctx.fillRect(0,0,W,H);
+    for(var sa=0; sa<90; sa++){
+      drawSparkle(ctx, Math.random()*W, Math.random()*H, 2+Math.random()*3, 'rgba(230,190,110,0.55)');
+    }
+    ctx.textAlign = 'center';
+    ctx.font = "italic 600 42px 'Playfair Display'";
+    ctx.fillStyle = '#e6be6e';
+    ctx.fillText('Happy Anniversary', W/2, 104);
+
+    for(var ig=0; ig<totalShots; ig++){
+      var yg = topMargin + ig*(frameH+gapY);
+      ctx.fillStyle = '#141414';
+      ctx.fillRect(frameX, yg, frameW, frameH - captionH);
+      ctx.strokeStyle = '#c69a4e';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(frameX+8, yg+8, frameW-16, frameH-captionH-16);
+      drawPairInto(hostImgs[ig], guestImgs[ig], frameX+pad, yg+pad, squareSize, gapPhotos);
+      ctx.font = "16px 'JetBrains Mono'";
+      ctx.fillStyle = '#e6be6e';
+      ctx.textAlign = 'left';
+      ctx.fillText('#' + (ig+1), frameX+pad, yg + frameH - 14);
+    }
+
+    ctx.textAlign = 'center';
+    ctx.font = "600 24px 'Space Grotesk'";
+    ctx.fillStyle = '#e6be6e';
+    ctx.fillText(names.host + ' & ' + names.guest, W/2, H - 130);
+    ctx.font = "18px 'JetBrains Mono'";
+    ctx.fillStyle = 'rgba(230,190,110,0.75)';
+    ctx.fillText((message ? message + '  ·  ' : '') + dateStr, W/2, H - 95);
+  }
+
+  else if(tpl === 'muah'){
+    ctx.fillStyle = '#fffaf9';
+    ctx.fillRect(0,0,W,H);
+    ctx.textAlign = 'center';
+    ctx.font = "900 46px 'Space Grotesk'";
+    ctx.fillStyle = '#e63950';
+    ctx.fillText('MUAH!', W/2, 100);
+    drawHeart(ctx, W/2 - 132, 82, 15, '#e63950');
+    drawHeart(ctx, W/2 + 132, 82, 15, '#e63950');
+
+    for(var im2=0; im2<totalShots; im2++){
+      var ym2 = topMargin + im2*(frameH+gapY);
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.15)'; ctx.shadowBlur = 14; ctx.shadowOffsetY = 6;
+      ctx.fillStyle = '#fff';
+      roundRectPath(ctx, frameX, ym2, frameW, frameH - captionH, 12);
+      ctx.fill();
+      ctx.restore();
+      ctx.save();
+      ctx.strokeStyle = 'rgba(230,57,80,0.4)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5,4]);
+      roundRectPath(ctx, frameX+6, ym2+6, frameW-12, (frameH-captionH)-12, 10);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+
+      if(im2 === 0){
+        // frame pertama: satu foto gede berbentuk hati (host, atau guest kalau host kosong)
+        var hSize = 190;
+        var hx = frameX + frameW/2;
+        var hy = ym2 + pad;
+        var boxW = hSize*2, boxH = hSize*1.55;
+        var heroImg = hostImgs[im2] || guestImgs[im2];
+        ctx.save();
+        heartClipPath(ctx, hx, hy, hSize);
+        ctx.clip();
+        if(heroImg){
+          var coverScale = Math.max(boxW/heroImg.width, boxH/heroImg.height);
+          var diw = heroImg.width*coverScale, dih = heroImg.height*coverScale;
+          ctx.drawImage(heroImg, hx - diw/2, hy - (dih-boxH)/2, diw, dih);
+        } else {
+          ctx.fillStyle = '#f7d7dc';
+          ctx.fillRect(hx-boxW/2, hy, boxW, boxH);
+        }
+        ctx.restore();
+      } else {
+        drawPairInto(hostImgs[im2], guestImgs[im2], frameX+pad, ym2+pad, squareSize, gapPhotos);
+      }
+
+      ctx.font = "16px 'JetBrains Mono'";
+      ctx.fillStyle = '#e63950';
+      ctx.textAlign = 'left';
+      ctx.fillText('#' + (im2+1), frameX+pad, ym2 + frameH - 14);
+    }
+
+    drawBuntingLove(ctx, W/2, H - 170, 220, 42);
+
+    ctx.textAlign = 'center';
+    ctx.font = "700 22px 'Space Grotesk'";
+    ctx.fillStyle = '#e63950';
+    ctx.fillText(message || (names.host + ' & ' + names.guest), W/2, H - 95);
+    ctx.font = "16px 'JetBrains Mono'";
+    ctx.fillStyle = 'rgba(230,57,80,0.7)';
+    ctx.fillText(dateStr, W/2, H - 65);
+  }
 }
 
 function roundRectPath(ctx, x, y, w, h, r){
@@ -1569,6 +2083,13 @@ async function tick(){
   document.getElementById('tplCodeChip').textContent = 'ROOM ' + state.code;
   document.getElementById('capCodeChip').textContent = 'ROOM ' + state.code;
   document.getElementById('resCodeChip').textContent = 'ROOM ' + state.code;
+
+  // Nyalain kamera + koneksi video-call sedari kedua pihak udah gabung,
+  // gak nunggu sampe masuk layar ambil-foto — biar pas nyampe layar foto,
+  // videonya udah nyambung duluan.
+  await startCamera();
+  if(!state.pc) await setupWebRTC();
+  await pollRtcSignal(room);
 
   if(!room.template){
     showScreen('template');
